@@ -169,7 +169,9 @@ impl<'a> TokenStream<'a> {
                     kw
                 }
                 LxTkKind::Eof => Eof,
-                LxTkKind::Whitespace | LxTkKind::LineComment {..} | LxTkKind::BlockComment {..} => {
+                LxTkKind::Whitespace
+                | LxTkKind::LineComment { .. }
+                | LxTkKind::BlockComment { .. } => {
                     tk = self.next_cursor_token();
                     continue;
                 }
@@ -191,8 +193,11 @@ impl<'a> TokenStream<'a> {
         }
 
         let tk = self.cursor.advance_token();
-        self.prev_pos = self.pos;
-        self.pos += tk.len as usize;
+
+        if tk.len != 0 {
+            self.prev_pos = self.pos;
+            self.pos += tk.len as usize;
+        }
 
         tk
     }

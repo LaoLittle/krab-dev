@@ -18,7 +18,7 @@ impl<'a> Parser<'a> {
             Token::OpenParen => {
                 let e = self.parse_unary_expr();
                 let e = self.parse_binary_expr(e, 0, Self::peek_token_skip_nl);
-                self.expect(Token::CloseParen).unwrap();
+                self.expect(Token::CloseParen);
                 ExprStmt::paren(e)
             }
             Token::Ident => ExprStmt::Ident(Ident::new_with_end(
@@ -48,20 +48,21 @@ impl<'a> Parser<'a> {
                 let mut at = None;
                 if let Token::At = self.peek_token() {
                     self.bump();
-                    self.expect(Token::Ident).unwrap();
+                    self.expect(Token::Ident);
                     at = Some(self.last_ident());
                 }
 
                 let mut expr = None;
-                if !matches!(self.peek_token(),
+                if !matches!(
+                    self.peek_token(),
                     Token::NewLine
-                    | Token::Semi
-                    | Token::CloseParen
-                    | Token::CloseBrace
-                    | Token::CloseBracket
-                    | Token::Eof
-                )
-                {
+                        | Token::Semi
+                        | Token::CloseParen
+                        | Token::CloseBrace
+                        | Token::CloseBracket
+                        | Token::Elvis // return ?: value
+                        | Token::Eof
+                ) {
                     expr = Some(self.parse_expr());
                 }
 
@@ -70,8 +71,9 @@ impl<'a> Parser<'a> {
             Token::Null => ExprStmt::null(),
             tk => {
                 self.lookahead = Some(tk);
+
                 ExprStmt::bad()
-            },
+            }
         }
     }
 
@@ -135,7 +137,9 @@ impl<'a> Parser<'a> {
                         let rhs = self.parse_binary_expr(rhs, rprec + 1, peek);
 
                         lhs = ExprStmt::binary(binop, lhs, rhs);
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 Token::Semi | Token::Eof => break,
                 _ => match self.parse_assoc_expr(lhs) {
@@ -153,19 +157,19 @@ impl<'a> Parser<'a> {
             // function call
             Token::OpenParen => {
                 let args = self.parse_call_args();
-                self.expect_skip_nl(Token::CloseParen).unwrap();
+                self.expect_skip_nl(Token::CloseParen);
 
                 ExprStmt::call(expr, args)
             }
             Token::OpenBracket => {
                 let idx = self.parse_expr();
-                self.expect_skip_nl(Token::CloseBracket).unwrap();
+                self.expect_skip_nl(Token::CloseBracket);
 
                 ExprStmt::index(expr, idx)
             }
             // method call or property get
             Token::Dot => {
-                self.expect_skip_nl(Token::Ident).unwrap();
+                self.expect_skip_nl(Token::Ident);
                 let id = self.last_ident();
 
                 ExprStmt::selector(expr, id)

@@ -59,7 +59,7 @@ impl ExprStmt {
     pub fn r#return(expr: Option<Self>, at: Option<Ident>) -> Self {
         Self::Return(ReturnExpr {
             expr: expr.map(Box::new),
-            at
+            at,
         })
     }
 
@@ -101,7 +101,6 @@ pub struct SelectorExpr {
 pub struct CallExpr {
     expr: Box<ExprStmt>, // func can be lambda
     args: Vec<ExprStmt>,
-
 }
 
 #[derive(Debug)]
