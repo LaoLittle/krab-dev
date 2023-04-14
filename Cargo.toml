@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "kotlin-lexer",
+    "kotlin-ast",
+    "kotlin-parse",
+    "compiler"
+]
