@@ -2,5 +2,6 @@
 members = [
     "kotlin-lexer",
     "kotlin-ast",
-    "kotlin-parse"
+    "kotlin-parse",
+    "kotlin-span"
 ]
