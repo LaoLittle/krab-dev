@@ -1,5 +1,5 @@
 use crate::stream::Token;
-use kotlin_ast::Span;
+use kotlin_span::Span;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]

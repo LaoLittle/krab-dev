@@ -59,6 +59,7 @@ impl<'a> TokenStream<'a> {
                 LxTkKind::At => At,
                 LxTkKind::Semi => Semi,
                 LxTkKind::Comma => Comma,
+                LxTkKind::Colon => Colon,
                 LxTkKind::OpenParen => OpenParen,
                 LxTkKind::CloseParen => CloseParen,
                 LxTkKind::OpenBracket => OpenBracket,
@@ -272,6 +273,8 @@ pub enum Token {
     DotDot,
     /// ,
     Comma,
+    /// :
+    Colon,
     /// >
     Greater,
     /// >=

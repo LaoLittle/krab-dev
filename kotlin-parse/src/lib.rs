@@ -1,7 +1,10 @@
 use crate::errors::Error;
 use crate::stream::{Token, TokenStream};
-use kotlin_ast::{Ident, Span};
+use kotlin_ast::Ident;
+use kotlin_span::symbol::Symbol;
+use kotlin_span::Span;
 
+mod decl;
 mod errors;
 mod expr;
 mod stmt;
@@ -10,6 +13,7 @@ mod stream;
 pub struct Parser<'a> {
     stream: TokenStream<'a>,
     lookahead: Option<Token>,
+    keep_nl: bool,
     errors: Vec<Error>,
 }
 
@@ -19,6 +23,7 @@ impl<'a> Parser<'a> {
         Self {
             stream: TokenStream::new(input),
             lookahead: None,
+            keep_nl: false,
             errors: vec![],
         }
     }
@@ -33,25 +38,35 @@ impl<'a> Parser<'a> {
 
     #[inline]
     pub fn advance_token(&mut self) -> Token {
+        if self.keep_nl {
+            self.keep_nl = false;
+            return Token::NewLine;
+        }
+
         self.lookahead
             .take()
             .unwrap_or_else(|| self.stream.advance_token())
     }
 
     pub fn advance_token_skip_nl(&mut self) -> Token {
-        let mut tk = self.advance_token();
+        self.keep_nl = false;
+        let mut tk = self.advance_token(); // get lookahead
         loop {
             match tk {
                 Token::NewLine => {
                     tk = self.stream.advance_token();
                     continue;
                 }
-                or => return or,
+                _ => return tk,
             }
         }
     }
 
     pub fn peek_token(&mut self) -> Token {
+        if self.keep_nl {
+            return Token::NewLine;
+        }
+
         if let Some(tk) = self.lookahead.clone() {
             return tk;
         }
@@ -63,6 +78,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn peek_token_skip_nl(&mut self) -> Token {
+        self.keep_nl = false;
+
         match self.lookahead.clone() {
             Some(Token::NewLine) | None => {}
             Some(or) => return or,
@@ -99,8 +116,12 @@ impl<'a> Parser<'a> {
         Span::new_with_end(self.stream.prev_pos(), self.stream.pos())
     }
 
-    pub const fn last_ident(&self) -> Ident {
-        Ident::new_with_end(self.stream.prev_pos(), self.stream.pos())
+    pub fn last_ident(&self) -> Ident {
+        let span = self.last_span();
+        let s = &self.source()[span.range()];
+        let sym = Symbol::intern(s);
+
+        Ident::new(sym, span)
     }
 
     #[inline]
@@ -128,12 +149,33 @@ impl<'a> Parser<'a> {
     pub const fn pos(&self) -> usize {
         self.stream.pos()
     }
+
+    #[inline]
+    pub fn keep_nl(&mut self) {
+        self.keep_nl = true;
+    }
+
+    pub fn get_line(&self, pos: usize) -> &str {
+        const NL: char = '\u{000A}';
+
+        let source = self.source();
+        assert!(pos < source.len());
+
+        let (back, front) = source.split_at(pos);
+        let b = back.rfind(NL).map(|i| i + 1).unwrap_or(0);
+
+        let f = front.find(NL).map(|i| i + pos).unwrap_or(source.len());
+
+        &source[b..f]
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::stmt::PackageStmt;
     use crate::{Parser, TokenStream};
+    use kotlin_ast::decl::{DeclStmt, FunDecl, PackageDecl};
+    use kotlin_ast::stmt::Stmt;
+    use kotlin_span::with_global_session_init;
     use std::ops::Sub;
     use std::time::Instant;
 
@@ -150,30 +192,125 @@ mod tests {
 
     #[test]
     fn parse() {
-        let prev = Instant::now();
-        let mut parser = Parser::new(
-            r#"
-        a ?: return ?: ee
+        with_global_session_init(|| {
+            let prev = Instant::now();
+            let mut parser = Parser::new(
+                r#"
+        dad(min.a().c())
         "#,
-        );
-        let decl = parser.parse_expr();
-        let now = Instant::now();
-        println!("Parsed: {:#?}\ncost {}μs", decl, now.sub(prev).as_micros());
+            );
+            let expr = parser.parse_expr();
+            let now = Instant::now();
+            println!("Parsed: {:#?}\ncost {}μs", expr, now.sub(prev).as_micros());
 
-        println!("------ errors ------");
-        for error in parser.errors() {
-            println!("{}", error);
-        }
-        println!("------  end   ------");
+            println!("------ errors ------");
+            for error in parser.errors() {
+                println!("{}", error);
+            }
+            println!("------  end   ------");
+        })
     }
 
     #[test]
     fn pkg() {
-        let mut parser = Parser::new("package a.b.cddd.");
-        let pkg = parser.parse_package_stmt();
+        let mut parser = Parser::new("a.b.cddd.dad");
+        let pkg = parser.parse_package_decl();
         println!("{:?}", pkg);
-        if let PackageStmt::Valid(span) = pkg {
+        if let PackageDecl::Valid(span) = pkg {
             println!("{:?}", &parser.source()[span.range()]);
         }
+    }
+
+    #[test]
+    fn import() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new("import Class\nimport a.b.c.Class");
+            let stmt = parser.parse_stmt();
+            println!("{:?}", stmt);
+        })
+    }
+
+    #[test]
+    fn stmt() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+                package a
+        "#,
+            );
+            let stmt = parser.parse_stmt();
+
+            if let Stmt::Decl(DeclStmt::Package(PackageDecl::Valid(s))) = &stmt {
+                println!("{:?}", &parser.source()[s.range()]);
+            }
+            println!("{:#?}", stmt);
+
+            println!("------ errors ------");
+            for error in parser.errors() {
+                println!("{}", error);
+            }
+            println!("------  end   ------");
+        });
+    }
+
+    #[test]
+    fn block() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+        a@{
+        val a: Int = eae;
+        bab.b()
+        ddd()
+        }
+        "#,
+            );
+
+            println!("{:#?}", parser.parse_expr());
+        });
+    }
+
+    #[test]
+    fn fun() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+            fun
+            main  (
+            a:
+            String
+            ) {
+            fun a() {
+            aba ?: c
+
+            ?: d
+            +b
+            }
+
+            val bab = dd @ { val bb = eae; ca }
+
+            val a = b
+            }
+            "#,
+            );
+
+            let stmt = parser.parse_stmt();
+            if let Stmt::Decl(DeclStmt::Fun(FunDecl { name, args, body })) = stmt {
+                println!("function name is {:?}", name.symbol().as_str());
+                println!("args: {:#?}", args);
+                println!("body: {:#?}", body);
+
+                assert_eq!(parser.errors().len(), 0);
+            } else {
+                panic!("not a fun");
+            }
+        })
+    }
+
+    #[test]
+    fn get_ln() {
+        let parser = Parser::new("abc\ncdbb\ndada");
+
+        println!("{:?}", parser.get_line(12));
     }
 }

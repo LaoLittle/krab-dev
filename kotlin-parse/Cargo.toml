@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 kotlin-lexer = { path = "../kotlin-lexer" }
 kotlin-ast = { path = "../kotlin-ast" }
+kotlin-span = { path = "../kotlin-span" }

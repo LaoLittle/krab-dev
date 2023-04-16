@@ -1,4 +1,7 @@
+use crate::block::Block;
+use crate::stmt::Stmt;
 use crate::Ident;
+use kotlin_span::Span;
 
 #[derive(Debug)]
 pub enum ExprStmt {
@@ -11,6 +14,7 @@ pub enum ExprStmt {
     Selector(SelectorExpr),
     Index(IndexExpr),
     Return(ReturnExpr),
+    Block(BlockExpr),
     Null,
     Bad,
 }
@@ -59,6 +63,13 @@ impl ExprStmt {
     pub fn r#return(expr: Option<Self>, at: Option<Ident>) -> Self {
         Self::Return(ReturnExpr {
             expr: expr.map(Box::new),
+            at,
+        })
+    }
+
+    pub fn block(stmts: Vec<Stmt>, at: Option<Ident>, span: Span) -> Self {
+        Self::Block(BlockExpr {
+            body: Block { stmts, span },
             at,
         })
     }
@@ -143,6 +154,12 @@ pub struct IndexExpr {
 #[derive(Debug)]
 pub struct ReturnExpr {
     expr: Option<Box<ExprStmt>>,
+    at: Option<Ident>,
+}
+
+#[derive(Debug)]
+pub struct BlockExpr {
+    body: Block,
     at: Option<Ident>,
 }
 

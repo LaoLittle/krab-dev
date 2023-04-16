@@ -2,7 +2,7 @@ use super::Parser;
 use crate::stream::Token;
 use kotlin_ast::expr::{BinaryOp, ExprStmt, UnaryOp};
 use kotlin_ast::Ident;
-use std::fmt::Write;
+use kotlin_span::Span;
 
 impl<'a> Parser<'a> {
     /// unary_expr -> '(' expr ')' | unary_op expr |
@@ -13,6 +13,14 @@ impl<'a> Parser<'a> {
         expr
     }
 
+    pub fn parse_block_expr(&mut self, at: Option<Ident>) -> ExprStmt {
+        let start = self.pos();
+        let stmts = self.parse_stmt_list();
+        let end = self.pos();
+
+        ExprStmt::block(stmts, at, Span::new_with_end(start, end))
+    }
+
     pub fn parse_unary_expr(&mut self) -> ExprStmt {
         match self.advance_token_skip_nl() {
             Token::OpenParen => {
@@ -21,10 +29,19 @@ impl<'a> Parser<'a> {
                 self.expect(Token::CloseParen);
                 ExprStmt::paren(e)
             }
-            Token::Ident => ExprStmt::Ident(Ident::new_with_end(
-                self.stream.prev_pos(),
-                self.stream.pos(),
-            )),
+            Token::Ident => {
+                let id = self.last_ident();
+                match self.peek_token() {
+                    Token::At => {
+                        self.bump();
+                        self.expect_skip_nl(Token::OpenBrace);
+                        let expr = self.parse_block_expr(Some(id));
+                        self.expect_skip_nl(Token::CloseBrace);
+                        expr
+                    }
+                    _ => ExprStmt::Ident(id),
+                }
+            }
             unop @ (Token::Plus | Token::Minus | Token::Inc | Token::Dec | Token::Not) => {
                 let unop = match unop {
                     Token::Plus => UnaryOp::Positive,
@@ -43,6 +60,11 @@ impl<'a> Parser<'a> {
                 }
 
                 ExprStmt::unary(unop, e)
+            }
+            Token::OpenBrace => {
+                let expr = self.parse_block_expr(None);
+                self.expect_skip_nl(Token::CloseBrace);
+                expr
             }
             Token::Return => {
                 let mut at = None;
@@ -141,11 +163,35 @@ impl<'a> Parser<'a> {
                         break;
                     }
                 }
-                Token::Semi | Token::Eof => break,
-                _ => match self.parse_assoc_expr(lhs) {
-                    Ok(expr) => lhs = expr,
-                    Err(expr) => return expr,
-                },
+                Token::Semi | Token::Eof => {
+                    self.bump(); // eat ';' then break
+                    break;
+                }
+                tk => {
+                    if let Token::NewLine = tk {
+                        self.bump();
+                        if let Token::Elvis = peek(self) {
+                            const ELVIS_PRECEDENCE: u32 = 50;
+                            if lprec < ELVIS_PRECEDENCE {
+                                self.bump();
+                                let rhs = self.parse_unary_expr();
+                                let rhs = self.parse_binary_expr(rhs, ELVIS_PRECEDENCE + 1, peek);
+
+                                lhs = ExprStmt::binary(BinaryOp::Elvis, lhs, rhs);
+                                continue;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            self.keep_nl = true;
+                        }
+                    }
+
+                    match self.parse_assoc_expr(lhs) {
+                        Ok(expr) => lhs = expr,
+                        Err(expr) => return expr,
+                    }
+                }
             }
         }
 
@@ -153,33 +199,41 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_assoc_expr(&mut self, expr: ExprStmt) -> Result<ExprStmt, ExprStmt> {
-        Ok(match self.advance_token_skip_nl() {
-            // function call
-            Token::OpenParen => {
-                let args = self.parse_call_args();
-                self.expect_skip_nl(Token::CloseParen);
+        let mut nl = false;
+        Ok(loop {
+            break match self.advance_token() {
+                // function call
+                Token::OpenParen => {
+                    let args = self.parse_call_args();
+                    self.expect_skip_nl(Token::CloseParen);
 
-                ExprStmt::call(expr, args)
-            }
-            Token::OpenBracket => {
-                let idx = self.parse_expr();
-                self.expect_skip_nl(Token::CloseBracket);
+                    ExprStmt::call(expr, args)
+                }
+                Token::OpenBracket => {
+                    let idx = self.parse_expr();
+                    self.expect_skip_nl(Token::CloseBracket);
 
-                ExprStmt::index(expr, idx)
-            }
-            // method call or property get
-            Token::Dot => {
-                self.expect_skip_nl(Token::Ident);
-                let id = self.last_ident();
+                    ExprStmt::index(expr, idx)
+                }
+                // method call or property get
+                Token::Dot => {
+                    self.expect_skip_nl(Token::Ident);
+                    let id = self.last_ident();
 
-                ExprStmt::selector(expr, id)
-            }
-            Token::Inc => ExprStmt::unary(UnaryOp::PostInc, expr),
-            Token::Dec => ExprStmt::unary(UnaryOp::PostDec, expr),
-            tk => {
-                self.lookahead = Some(tk);
-                return Err(expr);
-            }
+                    ExprStmt::selector(expr, id)
+                }
+                Token::Inc => ExprStmt::unary(UnaryOp::PostInc, expr),
+                Token::Dec => ExprStmt::unary(UnaryOp::PostDec, expr),
+                Token::NewLine => {
+                    nl = true;
+                    continue;
+                }
+                tk => {
+                    self.keep_nl = nl;
+                    self.lookahead = Some(tk);
+                    return Err(expr);
+                }
+            };
         })
     }
 
@@ -204,39 +258,5 @@ impl<'a> Parser<'a> {
         }
 
         args
-    }
-
-    pub fn parse_decl(&mut self) -> Option<kotlin_ast::decl::Decl> {
-        let tk = self.advance_token_skip_nl();
-        match tk {
-            Token::Fun => {
-                println!("parse function");
-                let name = self.advance_token_skip_nl();
-                let id = Ident::new_with_end(self.stream.prev_pos(), self.stream.pos());
-                let si = &self.source()[id.span().range()];
-                println!("name={si}");
-                if !matches!(name, Token::Ident) {
-                    let s = self
-                        .source()
-                        .get(
-                            (self.stream.prev_pos().saturating_sub(4))
-                                ..(self.stream.pos().saturating_add(4)),
-                        )
-                        .unwrap_or(si);
-                    println!("{s}");
-                    let mut s =
-                        String::with_capacity(self.stream.pos() - self.stream.prev_pos() + 4);
-                    for _ in 0..4 {
-                        s.push(' ');
-                    }
-                    write!(s, "^ expected identifier, found {:?}", si).unwrap();
-                    println!("{s}");
-                    return None;
-                }
-
-                None
-            }
-            _ => None,
-        }
     }
 }
