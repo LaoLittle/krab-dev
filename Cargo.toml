@@ -3,5 +3,7 @@ members = [
     "kotlin-lexer",
     "kotlin-ast",
     "kotlin-parse",
-    "kotlin-span"
+    "kotlin-span",
+    "kotlin-codegen",
+    "kotlin-llvm"
 ]

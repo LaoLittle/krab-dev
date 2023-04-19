@@ -23,6 +23,11 @@ impl<'a> Parser<'a> {
 
     pub fn parse_unary_expr(&mut self) -> ExprStmt {
         match self.advance_token_skip_nl() {
+            lit @ (Token::True | Token::False) => match lit {
+                Token::True => ExprStmt::lit_bool(true),
+                Token::False => ExprStmt::lit_bool(false),
+                _ => unreachable!(),
+            },
             Token::OpenParen => {
                 let e = self.parse_unary_expr();
                 let e = self.parse_binary_expr(e, 0, Self::peek_token_skip_nl);

@@ -9,6 +9,7 @@ mod errors;
 mod expr;
 mod stmt;
 mod stream;
+mod file;
 
 pub struct Parser<'a> {
     stream: TokenStream<'a>,
@@ -304,7 +305,20 @@ mod tests {
             } else {
                 panic!("not a fun");
             }
-        })
+        });
+    }
+
+    #[test]
+    fn lit() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+                true
+                "#,
+            );
+            let expr = parser.parse_expr();
+            println!("{:?}", expr);
+        });
     }
 
     #[test]

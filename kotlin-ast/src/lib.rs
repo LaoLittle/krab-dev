@@ -5,6 +5,7 @@ pub mod block;
 pub mod decl;
 pub mod expr;
 pub mod stmt;
+pub mod file;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Ident {

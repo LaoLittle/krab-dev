@@ -7,7 +7,7 @@ use kotlin_span::Span;
 pub enum ExprStmt {
     Ident(Ident),
     Call(CallExpr),
-    Literal,
+    Lit(LiteralExpr),
     Paren(Box<ExprStmt>),
     Binary(BinaryExpr),
     Unary(UnaryExpr),
@@ -37,6 +37,26 @@ impl ExprStmt {
             lhs: lhs.into(),
             rhs: rhs.into(),
         })
+    }
+
+    pub fn lit_bool(val: bool) -> Self {
+        Self::Lit(LiteralExpr::Boolean(val))
+    }
+
+    pub fn lit_char(val: char) -> Self {
+        Self::Lit(LiteralExpr::Char(val))
+    }
+
+    pub fn lit_string(span: Span) -> Self {
+        Self::Lit(LiteralExpr::String(span))
+    }
+
+    pub fn lit_integer(span: Span) -> Self {
+        Self::Lit(LiteralExpr::Integer(span))
+    }
+
+    pub fn lit_float(span: Span) -> Self {
+        Self::Lit(LiteralExpr::Float(span))
     }
 
     pub fn call(expr: Self, args: Vec<Self>) -> Self {
@@ -93,8 +113,13 @@ impl ExprStmt {
     }
 }
 
+#[derive(Debug)]
 pub enum LiteralExpr {
-    Num,
+    Integer(Span),
+    Float(Span),
+    String(Span),
+    Char(char),
+    Boolean(bool),
 }
 
 #[derive(Debug)]
@@ -110,14 +135,14 @@ pub struct SelectorExpr {
 /// (expr)()
 #[derive(Debug)]
 pub struct CallExpr {
-    expr: Box<ExprStmt>, // func can be lambda
-    args: Vec<ExprStmt>,
+    pub expr: Box<ExprStmt>, // func can be lambda
+    pub args: Vec<ExprStmt>,
 }
 
 #[derive(Debug)]
 pub struct UnaryExpr {
-    op: UnaryOp,
-    expr: Box<ExprStmt>,
+    pub op: UnaryOp,
+    pub expr: Box<ExprStmt>,
 }
 
 #[derive(Debug)]
@@ -140,27 +165,27 @@ pub enum UnaryOp {
 
 #[derive(Debug)]
 pub struct BinaryExpr {
-    op: BinaryOp,
-    lhs: Box<ExprStmt>,
-    rhs: Box<ExprStmt>,
+    pub op: BinaryOp,
+    pub lhs: Box<ExprStmt>,
+    pub rhs: Box<ExprStmt>,
 }
 
 #[derive(Debug)]
 pub struct IndexExpr {
-    expr: Box<ExprStmt>,
-    index: Box<ExprStmt>,
+    pub expr: Box<ExprStmt>,
+    pub index: Box<ExprStmt>,
 }
 
 #[derive(Debug)]
 pub struct ReturnExpr {
-    expr: Option<Box<ExprStmt>>,
-    at: Option<Ident>,
+    pub expr: Option<Box<ExprStmt>>,
+    pub at: Option<Ident>,
 }
 
 #[derive(Debug)]
 pub struct BlockExpr {
-    body: Block,
-    at: Option<Ident>,
+    pub body: Block,
+    pub at: Option<Ident>,
 }
 
 #[derive(Debug)]

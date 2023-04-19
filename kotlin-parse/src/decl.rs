@@ -1,15 +1,10 @@
 use crate::stream::Token;
 use crate::Parser;
 use kotlin_ast::block::Block;
-use kotlin_ast::decl::{DeclStmt, FunArg, FunDecl, ImportDecl, PackageDecl};
-use kotlin_ast::Ident;
+use kotlin_ast::decl::{FunArg, FunDecl, ImportDecl, PackageDecl};
 use kotlin_span::Span;
 
 impl<'a> Parser<'a> {
-    pub fn parse_decl() -> DeclStmt {
-        unimplemented!()
-    }
-
     pub fn parse_package_decl(&mut self) -> PackageDecl {
         self.peek_token(); // skip whitespaces
 
@@ -73,6 +68,12 @@ impl<'a> Parser<'a> {
         self.expect_skip_nl(Token::OpenParen);
         let args = self.parse_arg_list();
         self.expect_skip_nl(Token::CloseParen);
+        let mut ret = None;
+        if let Token::Colon = self.peek_token_skip_nl() {
+            self.bump();
+            self.expect_skip_nl(Token::Ident);
+            ret = Some(self.last_ident());
+        }
         self.expect_skip_nl(Token::OpenBrace);
         let start = self.pos();
         let stmts = self.parse_stmt_list();
@@ -86,6 +87,7 @@ impl<'a> Parser<'a> {
                 stmts,
                 span: Span::new_with_end(start, end),
             },
+            ret_type: ret,
         }
     }
 

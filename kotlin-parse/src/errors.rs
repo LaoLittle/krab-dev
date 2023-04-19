@@ -24,7 +24,7 @@ impl Display for Error {
                     "expected token {:?}, found {:?} (at {} to {})",
                     expect,
                     actual,
-                    span.start(),
+                    span.pos(),
                     span.end()
                 )?;
             }

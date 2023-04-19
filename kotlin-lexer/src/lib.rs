@@ -165,14 +165,14 @@ pub enum LiteralKind {
     Byte { terminated: bool },
     /// ""abc"", ""abc"
     Str { terminated: bool },
-    /// "b"abc"", "b"abc"
-    ByteStr { terminated: bool },
+    // "b"abc"", "b"abc"
+    //ByteStr { terminated: bool },
     /// "r"abc"", "r#"abc"#", "r####"ab"###"c"####", "r#"a". `None` indicates
     /// an invalid literal.
     RawStr,
-    /// "br"abc"", "br#"abc"#", "br####"ab"###"c"####", "br#"a". `None`
-    /// indicates an invalid literal.
-    RawByteStr { n_hashes: Option<u8> },
+    // "br"abc"", "br#"abc"#", "br####"ab"###"c"####", "br#"a". `None`
+    // indicates an invalid literal.
+    // RawByteStr { n_hashes: Option<u8> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

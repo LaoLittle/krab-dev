@@ -29,8 +29,10 @@ pub struct GlobalSession {
 
 impl GlobalSession {
     pub fn new() -> Self {
+        let mut i = Interner::new();
+        i.prefill();
         Self {
-            interner: RefCell::new(Interner::new()),
+            interner: RefCell::new(i),
         }
     }
 
@@ -41,36 +43,36 @@ impl GlobalSession {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Span {
-    start: usize,
+    pos: usize,
     len: u32,
 }
 
 impl Span {
     #[inline]
-    pub const fn new(start: usize, len: u32) -> Self {
-        Self { start, len }
+    pub const fn new(pos: usize, len: u32) -> Self {
+        Self { pos, len }
     }
 
-    pub const fn new_with_end(start: usize, end: usize) -> Self {
-        assert!(end >= start);
-        Self::new(start, (end - start) as u32)
+    pub const fn new_with_end(pos: usize, end: usize) -> Self {
+        assert!(end >= pos);
+        Self::new(pos, (end - pos) as u32)
     }
 
     #[inline]
-    pub const fn start(self) -> usize {
-        self.start
+    pub const fn pos(self) -> usize {
+        self.pos
     }
 
     #[inline]
     pub const fn end(self) -> usize {
-        self.start + (self.len as usize)
+        self.pos + (self.len as usize)
     }
 
     #[inline]
     pub const fn range(self) -> Range<usize> {
-        let Self { start, len } = self;
+        let Self { pos, len } = self;
 
-        start..start + (len as usize)
+        pos..pos + (len as usize)
     }
 
     #[inline]
@@ -84,12 +86,53 @@ pub struct Interner {
     strings: Vec<&'static str>,
 }
 
+macro_rules! pre_define_symbol {
+    (Symbols { $($str:expr => $sym:ident: $num:expr);* $(;)? }) => {
+        $(pub const $sym: $crate::symbol::Symbol = $crate::symbol::Symbol::new($num);)*
+
+        fn _prefill(i: &mut Interner) {
+            $(i.intern_static($str);)*
+        }
+    };
+}
+
+pre_define_symbol! {
+    Symbols {
+        "Boolean" => BOOLEAN: 0;
+        "Int8" => INT8: 1;
+        "Int16" => INT16: 2;
+        "Int32" => INT32: 3;
+        "Int64" => INT64: 4;
+        "UInt8" => UINT8: 5;
+        "UInt16" => UINT16: 6;
+        "UInt32" => UINT32: 7;
+        "UInt64" => UINT64: 8;
+        "Unit" => UNIT: 9;
+    }
+}
+
 impl Interner {
     pub fn new() -> Self {
         Self {
             name_map: FxHashMap::default(),
             strings: vec![],
         }
+    }
+
+    fn prefill(&mut self) {
+        _prefill(self);
+    }
+
+    pub fn intern_static(&mut self, str: &'static str) -> Symbol {
+        if let Some(&sym) = self.name_map.get(str) {
+            return sym;
+        }
+
+        let sym = Symbol::new(self.strings.len() as u32);
+        self.strings.push(str);
+        self.name_map.insert(str, sym);
+
+        sym
     }
 
     pub fn intern(&mut self, s: &str) -> Symbol {
@@ -114,7 +157,7 @@ impl Interner {
 #[cfg(test)]
 mod tests {
     use crate::symbol::Symbol;
-    use crate::Interner;
+    use crate::{with_global_session_init, Interner, BOOLEAN, INT16, INT32, INT64, INT8};
 
     #[test]
     fn symbol_intern() {
@@ -130,5 +173,16 @@ mod tests {
         assert_eq!(i.get(Symbol::new(1)), "cat");
         assert_eq!(i.get(Symbol::new(2)), "foo");
         assert_eq!(i.get(Symbol::new(3)), "bar");
+    }
+
+    #[test]
+    fn prefilled() {
+        with_global_session_init(|| {
+            assert_eq!(Symbol::intern("Boolean"), BOOLEAN);
+            assert_eq!(Symbol::intern("Int8"), INT8);
+            assert_eq!(Symbol::intern("Int16"), INT16);
+            assert_eq!(Symbol::intern("Int32"), INT32);
+            assert_eq!(Symbol::intern("Int64"), INT64);
+        });
     }
 }

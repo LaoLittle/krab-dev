@@ -1,18 +1,12 @@
 use crate::stream::Token;
 use crate::Parser;
-use kotlin_ast::decl::{DeclStmt, ImportDecl, PackageDecl};
-use kotlin_ast::expr::ExprStmt;
-use kotlin_ast::stmt::{AssignKind, AssignStmt, Stmt};
-use kotlin_ast::Ident;
-use kotlin_span::Span;
+use kotlin_ast::decl::{DeclStmt, VarKind, VariableDecl};
+use kotlin_ast::stmt::{Stmt};
 
 impl<'a> Parser<'a> {
     pub fn parse_stmt_list(&mut self) -> Vec<Stmt> {
         let mut stmts = vec![];
-        while match self.peek_token_skip_nl() {
-            Token::Eof | Token::CloseBrace => false,
-            _ => true,
-        } {
+        while !matches!(self.peek_token_skip_nl(), Token::Eof | Token::CloseBrace) {
             stmts.push(self.parse_stmt());
         }
 
@@ -24,8 +18,8 @@ impl<'a> Parser<'a> {
             Token::Package => Stmt::Decl(DeclStmt::Package(self.parse_package_decl())),
             Token::Import => Stmt::Decl(DeclStmt::Import(self.parse_import_decl())),
             Token::Fun => Stmt::Decl(DeclStmt::Fun(self.parse_fun_decl())),
-            Token::Val => Stmt::Assign(self.parse_assign_stmt(false)),
-            Token::Var => Stmt::Assign(self.parse_assign_stmt(true)),
+            Token::Val => Stmt::Decl(DeclStmt::Variable(self.parse_variable_decl(false))),
+            Token::Var => Stmt::Decl(DeclStmt::Variable(self.parse_variable_decl(true))),
             Token::Semi | Token::Eof => Stmt::Empty,
             tk => {
                 self.lookahead = Some(tk);
@@ -34,7 +28,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_assign_stmt(&mut self, mutable: bool) -> AssignStmt {
+    pub fn parse_variable_decl(&mut self, mutable: bool) -> VariableDecl {
         self.expect_skip_nl(Token::Ident);
         let name = self.last_ident();
 
@@ -51,19 +45,19 @@ impl<'a> Parser<'a> {
         let kind = loop {
             match self.advance_token() {
                 Token::NewLine => skipped = true,
-                Token::Assign => break AssignKind::Init(self.parse_expr()),
+                Token::Assign => break VarKind::Init(self.parse_expr()),
                 tk => {
                     self.lookahead = Some(tk);
                     if !skipped {
                         self.expect(Token::Assign);
                     }
 
-                    break AssignKind::Decl;
+                    break VarKind::Decl;
                 }
             }
         };
 
-        AssignStmt {
+        VariableDecl {
             mutable,
             name,
             ty,

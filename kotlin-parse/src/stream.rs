@@ -66,6 +66,11 @@ impl<'a> TokenStream<'a> {
                 LxTkKind::CloseBracket => CloseBracket,
                 LxTkKind::OpenBrace => OpenBrace,
                 LxTkKind::CloseBrace => CloseBrace,
+                /*LxTkKind::Literal {
+                    kind, suffix_start
+                } => {
+
+                }*/
                 LxTkKind::Eq => match self.peek_next().kind {
                     LxTkKind::Eq => {
                         self.bump();
