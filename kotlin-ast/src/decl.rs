@@ -1,7 +1,7 @@
 use crate::block::Block;
+use crate::expr::ExprStmt;
 use crate::Ident;
 use kotlin_span::Span;
-use crate::expr::ExprStmt;
 
 #[derive(Debug)]
 pub enum DeclStmt {
@@ -24,7 +24,6 @@ pub enum VarKind {
     Decl,
     Init(ExprStmt),
 }
-
 
 #[derive(Debug)]
 pub enum PackageDecl {

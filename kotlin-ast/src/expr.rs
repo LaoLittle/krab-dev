@@ -87,11 +87,8 @@ impl ExprStmt {
         })
     }
 
-    pub fn block(stmts: Vec<Stmt>, at: Option<Ident>, span: Span) -> Self {
-        Self::Block(BlockExpr {
-            body: Block { stmts, span },
-            at,
-        })
+    pub fn block(body: Block, at: Option<Ident>) -> Self {
+        Self::Block(BlockExpr { body, at })
     }
 
     #[inline]

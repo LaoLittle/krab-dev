@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = "4.2.2"
-llvm-sys = "160"
+llvm-sys = { version = "160", features = [] }
 kotlin-parse = { path = "../kotlin-parse" }
 kotlin-ast = { path = "../kotlin-ast" }
 kotlin-span = { path = "../kotlin-span" }

@@ -4,12 +4,13 @@ use kotlin_ast::Ident;
 use kotlin_span::symbol::Symbol;
 use kotlin_span::Span;
 
+mod block;
 mod decl;
 mod errors;
 mod expr;
+mod file;
 mod stmt;
 mod stream;
-mod file;
 
 pub struct Parser<'a> {
     stream: TokenStream<'a>,
@@ -277,10 +278,10 @@ mod tests {
             let mut parser = Parser::new(
                 r#"
             fun
-            main  (
+            bbbaaa  (
             a:
             String
-            ) {
+            ): A {
             fun a() {
             aba ?: c
 
@@ -296,10 +297,17 @@ mod tests {
             );
 
             let stmt = parser.parse_stmt();
-            if let Stmt::Decl(DeclStmt::Fun(FunDecl { name, args, body })) = stmt {
+            if let Stmt::Decl(DeclStmt::Fun(FunDecl {
+                name,
+                args,
+                body,
+                ret_type,
+            })) = stmt
+            {
                 println!("function name is {:?}", name.symbol().as_str());
                 println!("args: {:#?}", args);
                 println!("body: {:#?}", body);
+                println!("ret type: {:#?}", ret_type);
 
                 assert_eq!(parser.errors().len(), 0);
             } else {

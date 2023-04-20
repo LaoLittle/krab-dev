@@ -75,18 +75,13 @@ impl<'a> Parser<'a> {
             ret = Some(self.last_ident());
         }
         self.expect_skip_nl(Token::OpenBrace);
-        let start = self.pos();
-        let stmts = self.parse_stmt_list();
-        let end = self.pos();
+        let body = self.parse_block();
         self.expect_skip_nl(Token::CloseBrace);
 
         FunDecl {
             name,
             args,
-            body: Block {
-                stmts,
-                span: Span::new_with_end(start, end),
-            },
+            body,
             ret_type: ret,
         }
     }

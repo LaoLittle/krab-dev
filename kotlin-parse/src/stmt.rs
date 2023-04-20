@@ -1,7 +1,7 @@
 use crate::stream::Token;
 use crate::Parser;
 use kotlin_ast::decl::{DeclStmt, VarKind, VariableDecl};
-use kotlin_ast::stmt::{Stmt};
+use kotlin_ast::stmt::Stmt;
 
 impl<'a> Parser<'a> {
     pub fn parse_stmt_list(&mut self) -> Vec<Stmt> {

@@ -1,3 +1,1 @@
-pub struct File {
-
-}
+pub struct File {}

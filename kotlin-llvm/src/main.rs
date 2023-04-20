@@ -1,12 +1,24 @@
 use clap::Arg;
+use kotlin_ast::block::Block;
 use kotlin_ast::decl::{DeclStmt, FunDecl};
-use kotlin_ast::expr::{BinaryExpr, BinaryOp, CallExpr, ExprStmt, LiteralExpr, ReturnExpr, UnaryExpr, UnaryOp};
-use kotlin_ast::decl::{VarKind,VariableDecl};
+use kotlin_ast::decl::{VarKind, VariableDecl};
+use kotlin_ast::expr::{
+    BinaryExpr, BinaryOp, CallExpr, ExprStmt, LiteralExpr, ReturnExpr, UnaryExpr, UnaryOp,
+};
 use kotlin_ast::stmt::Stmt;
 use kotlin_parse::Parser;
 use kotlin_span::symbol::Symbol;
 use kotlin_span::with_global_session_init;
-use llvm_sys::core::{LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildICmp, LLVMBuildLoad2, LLVMBuildMul, LLVMBuildNot, LLVMBuildRet, LLVMBuildStore, LLVMBuildSub, LLVMBuildTrunc, LLVMConstInt, LLVMContextCreate, LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder, LLVMDisposeModule, LLVMDumpModule, LLVMFunctionType, LLVMGetCalledFunctionType, LLVMGetParam, LLVMGetReturnType, LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext, LLVMPositionBuilderAtEnd, LLVMVoidTypeInContext};
+use llvm_sys::core::{
+    LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildBr,
+    LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildICmp, LLVMBuildLoad2, LLVMBuildMul, LLVMBuildNot,
+    LLVMBuildRet, LLVMBuildStore, LLVMBuildSub, LLVMBuildTrunc, LLVMConstInt, LLVMContextCreate,
+    LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder, LLVMDisposeModule,
+    LLVMDumpModule, LLVMFunctionType, LLVMGetCalledFunctionType, LLVMGetParam, LLVMGetReturnType,
+    LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext,
+    LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext, LLVMPositionBuilderAtEnd,
+    LLVMVoidTypeInContext,
+};
 use llvm_sys::prelude::{
     LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef,
 };
@@ -15,7 +27,6 @@ use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::ptr::null_mut;
-use kotlin_ast::block::Block;
 
 fn main() {
     let cmd = clap::Command::new("kotlincn")
@@ -76,7 +87,7 @@ impl Type {
             Self::Int32 => LLVMInt32TypeInContext(ctx),
             Self::Int64 => LLVMInt64TypeInContext(ctx),
             Self::Unit => LLVMVoidTypeInContext(ctx),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -151,7 +162,7 @@ impl Visitor {
             var_maps: Vec::with_capacity(10),
             globals: HashMap::new(),
             curr_fn: null_mut(),
-            block: null_mut()
+            block: null_mut(),
         }
     }
 
@@ -199,7 +210,10 @@ impl Visitor {
         let Type::Function(funty) = expr.ty else {
             unreachable!();
         };
-        let mut values: Vec<LLVMValueRef> = args.into_iter().map(|arg| self.visit_expr(arg, false).llvm).collect();
+        let mut values: Vec<LLVMValueRef> = args
+            .into_iter()
+            .map(|arg| self.visit_expr(arg, false).llvm)
+            .collect();
         let arg_len = values.len();
 
         let ret = Type::Boolean.get_llvm_type(self.ctx);
@@ -216,9 +230,9 @@ impl Visitor {
                 expr.llvm,
                 values.as_mut_ptr(),
                 arg_len as u32,
-                NUL_CSTR
+                NUL_CSTR,
             ),
-            ty
+            ty,
         }
     }
 
@@ -334,30 +348,15 @@ impl Visitor {
 
         match op {
             BinaryOp::Add => Value {
-                llvm: LLVMBuildAdd(
-                    self.builder,
-                    lhs,
-                    rhs,
-                    NUL_CSTR
-                ),
+                llvm: LLVMBuildAdd(self.builder, lhs, rhs, NUL_CSTR),
                 ty,
             },
             BinaryOp::Sub => Value {
-                llvm: LLVMBuildSub(
-                    self.builder,
-                    lhs,
-                    rhs,
-                    NUL_CSTR
-                ),
+                llvm: LLVMBuildSub(self.builder, lhs, rhs, NUL_CSTR),
                 ty,
             },
             BinaryOp::Mul => Value {
-                llvm: LLVMBuildMul(
-                    self.builder,
-                    lhs,
-                    rhs,
-                    NUL_CSTR
-                ),
+                llvm: LLVMBuildMul(self.builder, lhs, rhs, NUL_CSTR),
                 ty,
             },
             BinaryOp::Eq => Value {
@@ -401,8 +400,8 @@ impl Visitor {
             DeclStmt::Variable(var) => self.visit_variable_decl(var),
             DeclStmt::Fun(fun) => {
                 self.visit_fun_decl(fun);
-            },
-            decl => unimplemented!("{decl:?}")
+            }
+            decl => unimplemented!("{decl:?}"),
         }
     }
 
@@ -421,7 +420,15 @@ impl Visitor {
         }
     }
 
-    pub unsafe fn visit_fun_decl(&mut self, FunDecl { name, args, body, ret_type }: FunDecl) {
+    pub unsafe fn visit_fun_decl(
+        &mut self,
+        FunDecl {
+            name,
+            args,
+            body,
+            ret_type,
+        }: FunDecl,
+    ) {
         let use_globals = self.var_maps.len() == 0;
         let prev_scope = self.var_maps.len().saturating_sub(1);
         self.new_scope();
@@ -429,20 +436,33 @@ impl Visitor {
         let sym = name.symbol();
         let str = sym.as_str();
         let cstring = CString::new(str).unwrap();
-        let ret = ret_type.map(|id| Type::from_symbol(id.symbol()))
+        let ret = ret_type
+            .map(|id| Type::from_symbol(id.symbol()))
             .unwrap_or(Type::Unit);
 
-        let mut args_ll: Vec<LLVMTypeRef> = args.iter().map(|arg| Type::from_symbol(arg.ty.symbol())
-            .get_llvm_type(self.ctx)
-        ).collect();
+        let mut args_ll: Vec<LLVMTypeRef> = args
+            .iter()
+            .map(|arg| Type::from_symbol(arg.ty.symbol()).get_llvm_type(self.ctx))
+            .collect();
 
         let arg_len = args_ll.len();
 
-        let funty = LLVMFunctionType(ret.get_llvm_type(self.ctx), args_ll.as_mut_ptr(), arg_len as u32, 0);
+        let funty = LLVMFunctionType(
+            ret.get_llvm_type(self.ctx),
+            args_ll.as_mut_ptr(),
+            arg_len as u32,
+            0,
+        );
         let fun = LLVMAddFunction(self.module, cstring.as_ptr(), funty);
         let prev = self.curr_fn;
         self.curr_fn = fun;
-        let v = (Value { llvm: fun, ty: Type::Function(funty) }, true);
+        let v = (
+            Value {
+                llvm: fun,
+                ty: Type::Function(funty),
+            },
+            true,
+        );
         if let Some(map) = self.var_maps.get_mut(prev_scope) {
             map.insert(name.symbol(), v);
         }
@@ -452,19 +472,23 @@ impl Visitor {
         }
         map.insert(name.symbol(), v);
         for (i, arg) in args.into_iter().enumerate() {
-            map.insert(arg.name.symbol(), (Value {
-                llvm: LLVMGetParam(fun, i as u32),
-                ty: Type::from_symbol(arg.ty.symbol())
-            }, true));
+            map.insert(
+                arg.name.symbol(),
+                (
+                    Value {
+                        llvm: LLVMGetParam(fun, i as u32),
+                        ty: Type::from_symbol(arg.ty.symbol()),
+                    },
+                    true,
+                ),
+            );
         }
         let entry = LLVMAppendBasicBlockInContext(self.ctx, fun, NUL_CSTR);
         let prev_entry = self.block;
         self.block = entry;
 
         LLVMPositionBuilderAtEnd(self.builder, entry);
-        let Block {
-            stmts, span: _
-        } = body;
+        let Block { stmts, span: _ } = body;
         for stmt in stmts {
             self.visit_stmt(stmt);
         }

@@ -4,8 +4,8 @@ use kotlin_span::Span;
 pub mod block;
 pub mod decl;
 pub mod expr;
-pub mod stmt;
 pub mod file;
+pub mod stmt;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Ident {

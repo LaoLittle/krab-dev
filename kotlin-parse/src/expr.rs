@@ -14,11 +14,9 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_block_expr(&mut self, at: Option<Ident>) -> ExprStmt {
-        let start = self.pos();
-        let stmts = self.parse_stmt_list();
-        let end = self.pos();
+        let body = self.parse_block();
 
-        ExprStmt::block(stmts, at, Span::new_with_end(start, end))
+        ExprStmt::block(body, at)
     }
 
     pub fn parse_unary_expr(&mut self) -> ExprStmt {
