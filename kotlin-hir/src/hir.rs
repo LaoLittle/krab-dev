@@ -1,9 +1,8 @@
 use kotlin_span::Ident;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct ReferType {
-    /// type suspect
+    /// suspect
     sus: bool,
     /// type
     ty: Type,
@@ -33,9 +32,7 @@ pub struct Variable {
     idx: usize,
 }
 
-impl Variable {
-
-}
+impl Variable {}
 
 #[derive(Debug)]
 pub struct Stmt {}
@@ -43,8 +40,6 @@ pub struct Stmt {}
 pub enum StmtKind {
     Local(),
 }
-
-
 
 #[derive(Debug)]
 pub struct Expr {
@@ -62,10 +57,4 @@ pub enum ExprKind {
 pub enum LitExpr {
     Boolean(bool),
     Integer(u128),
-}
-
-impl Expr {
-    pub fn modify_type(&mut self, prefer: Option<Type>) {
-
-    }
 }

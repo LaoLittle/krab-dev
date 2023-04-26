@@ -31,10 +31,7 @@ impl<'a> Parser<'a> {
                         Some(IntSuffix::Long) => Some(IntTy::Long),
                         Some(IntSuffix::Unsigned) => Some(IntTy::Unsigned),
                         Some(IntSuffix::Unknown(sp)) => {
-                            self.errors.push(Error::UnknownSuffix {
-                                span: self.last_span(),
-                                suffix: sp,
-                            });
+                            self.errors.push(Error::UnknownSuffix { suffix: sp });
                             None
                         }
                         None => None,
@@ -224,8 +221,9 @@ impl<'a> Parser<'a> {
             // function call
             // expr\n(expr)
             // -x> expr(expr)
-            // --> [expr, (expr)]
+            // --> expr; (expr)
             Token::OpenParen => {
+                self.bump();
                 let args = self.parse_call_args();
                 self.expect_skip_nl(Token::CloseParen);
 

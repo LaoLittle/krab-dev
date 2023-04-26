@@ -174,10 +174,10 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
+
     use crate::{Parser, TokenStream};
     use kotlin_ast::decl::{DeclStmt, FunDecl, PackageDecl};
-    use kotlin_ast::stmt::{AssignStmt, ForStmt, Stmt, WhileStmt};
+    use kotlin_ast::stmt::Stmt;
     use kotlin_span::with_global_session_init;
     use std::ops::Sub;
     use std::time::Instant;
@@ -388,7 +388,7 @@ mod tests {
         with_global_session_init(|| {
             let mut parser = Parser::new(
                 r#"
-                1233 * 322
+                23+123 * 456L
                 "#,
             );
             println!("{:?}", parser.parse_stmt());

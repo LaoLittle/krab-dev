@@ -24,27 +24,21 @@ impl<'a> Parser<'a> {
             Token::While => Stmt::While(self.parse_while_stmt()),
             Token::For => Stmt::For(self.parse_for_stmt()),
             Token::Semi | Token::Eof => Stmt::Empty,
-            Token::Ident => {
-                    let id = self.last_ident();
+            tk => {
+                self.lookahead = Some(tk);
+                let expr = self.parse_expr();
+                if let ExprStmt::Ident(id) = expr {
                     match self.peek_token() {
-                        Token::At => {
-                            self.bump();
-                            self.expect_skip_nl(Token::OpenBrace);
-                            let expr = self.parse_lambda_expr(Some(id));
-                            self.expect_skip_nl(Token::CloseBrace);
-                            Stmt::Expr(expr)
-                        }
                         Token::Assign => {
                             self.bump();
                             let expr = self.parse_expr();
-                            Stmt::Assign(AssignStmt { id, expr })
+                            return Stmt::Assign(AssignStmt { id, expr });
                         }
-                        _ => Stmt::Expr(ExprStmt::Ident(id)),
+                        _ => {}
                     }
-            }
-            tk => {
-                self.lookahead = Some(tk);
-                Stmt::Expr(self.parse_expr())
+                }
+
+                Stmt::Expr(expr)
             }
         }
     }
@@ -56,10 +50,7 @@ impl<'a> Parser<'a> {
 
         let b = self.parse_block_even_single_expr();
 
-        WhileStmt {
-            cond,
-            body: b,
-        }
+        WhileStmt { cond, body: b }
     }
 
     pub fn parse_for_stmt(&mut self) -> ForStmt {

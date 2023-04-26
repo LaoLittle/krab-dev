@@ -10,7 +10,6 @@ pub enum Error {
         span: Span,
     },
     UnknownSuffix {
-        span: Span,
         suffix: Span,
     },
 }
@@ -32,8 +31,8 @@ impl Display for Error {
                     span.end()
                 )?;
             }
-            Self::UnknownSuffix { span, suffix } => {
-                write!(f, "unknown suffix at {span:?}, suffix {suffix:?}")?;
+            Self::UnknownSuffix { suffix } => {
+                write!(f, "unknown suffix at {suffix:?}")?;
             }
         }
 

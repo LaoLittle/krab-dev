@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::hir::Variable;
 use kotlin_parse::Parser;
 use kotlin_span::symbol::Symbol;
-use crate::hir::Variable;
+use std::collections::HashMap;
 
 pub struct Visitor<'a> {
     parser: Parser<'a>,
@@ -18,7 +18,5 @@ impl<'a> Visitor<'a> {
         }
     }
 
-    pub fn new_var() {
-
-    }
+    pub fn new_var() {}
 }

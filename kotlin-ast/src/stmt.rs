@@ -29,5 +29,5 @@ pub struct ForStmt {
 #[derive(Debug)]
 pub struct AssignStmt {
     pub id: Ident,
-    pub expr: ExprStmt
+    pub expr: ExprStmt,
 }

@@ -14,10 +14,9 @@ use llvm_sys::core::{
     LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildICmp, LLVMBuildLoad2, LLVMBuildMul, LLVMBuildNot,
     LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildStore, LLVMBuildSub, LLVMBuildTrunc, LLVMConstInt,
     LLVMContextCreate, LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder,
-    LLVMDisposeModule, LLVMDumpModule, LLVMFunctionType, LLVMGetCalledFunctionType, LLVMGetParam,
-    LLVMGetReturnType, LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext,
-    LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext,
-    LLVMPositionBuilderAtEnd, LLVMVoidTypeInContext,
+    LLVMDisposeModule, LLVMDumpModule, LLVMFunctionType, LLVMGetParam, LLVMInt16TypeInContext,
+    LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext, LLVMInt8TypeInContext,
+    LLVMModuleCreateWithNameInContext, LLVMPositionBuilderAtEnd, LLVMVoidTypeInContext,
 };
 use llvm_sys::prelude::{
     LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef,
@@ -603,36 +602,21 @@ mod tests {
     use crate::Visitor;
     use kotlin_parse::Parser;
     use kotlin_span::with_global_session_init;
-    use llvm_sys::core::{
-        LLVMCreatePassManager, LLVMDisposePassManager, LLVMGetGlobalPassRegistry,
-        LLVMRunPassManager,
-    };
-    use llvm_sys::initialization::LLVMInitializeInstCombine;
+
     use llvm_sys::target::{
-        LLVMCopyStringRepOfTargetData, LLVMInitializeAArch64AsmPrinter,
-        LLVMInitializeAArch64Target, LLVMInitializeX86Target, LLVMSetModuleDataLayout,
-        LLVM_InitializeAllAsmParsers, LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos,
-        LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets, LLVM_InitializeNativeTarget,
+        LLVMCopyStringRepOfTargetData, LLVMSetModuleDataLayout, LLVM_InitializeAllAsmParsers,
+        LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs,
+        LLVM_InitializeAllTargets,
     };
     use llvm_sys::target_machine::{
         LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout,
-        LLVMCreateTargetMachine, LLVMGetDefaultTargetTriple, LLVMGetFirstTarget,
-        LLVMGetHostCPUFeatures, LLVMGetHostCPUName, LLVMGetTargetFromName, LLVMGetTargetFromTriple,
-        LLVMGetTargetName, LLVMRelocMode, LLVMTargetMachineEmitToFile,
+        LLVMCreateTargetMachine, LLVMGetDefaultTargetTriple, LLVMGetHostCPUFeatures,
+        LLVMGetHostCPUName, LLVMGetTargetFromTriple, LLVMGetTargetName, LLVMRelocMode,
+        LLVMTargetMachineEmitToFile,
     };
-    use llvm_sys::transforms::instcombine::LLVMAddInstructionCombiningPass;
-    use llvm_sys::transforms::ipo::LLVMAddDeadArgEliminationPass;
-    use llvm_sys::transforms::pass_manager_builder::{
-        LLVMPassManagerBuilderCreate, LLVMPassManagerBuilderDispose,
-        LLVMPassManagerBuilderSetOptLevel, LLVMPassManagerBuilderSetSizeLevel,
-    };
-    use llvm_sys::transforms::scalar::{
-        LLVMAddDCEPass, LLVMAddDeadStoreEliminationPass, LLVMAddDemoteMemoryToRegisterPass,
-        LLVMAddGVNPass, LLVMAddMemCpyOptPass, LLVMAddSCCPPass,
-    };
-    use llvm_sys::transforms::util::LLVMAddPromoteMemoryToRegisterPass;
+
     use std::ffi::CStr;
-    use std::io::{stdout, Write};
+
     use std::ptr::null_mut;
 
     #[test]
@@ -648,10 +632,10 @@ mod tests {
             var da = a()
         }
         "#;
+
+        let mut parser = Parser::new(s);
         unsafe {
             with_global_session_init(|| {
-                let mut parser = Parser::new(s);
-
                 let mut vis = Visitor::new();
                 for stmt in parser.parse_stmt_list() {
                     vis.visit_stmt(stmt);
