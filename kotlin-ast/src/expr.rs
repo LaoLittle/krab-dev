@@ -1,6 +1,5 @@
 use crate::block::Block;
-use crate::stmt::Stmt;
-use crate::Ident;
+use kotlin_span::Ident;
 use kotlin_span::Span;
 
 #[derive(Debug)]
@@ -14,7 +13,8 @@ pub enum ExprStmt {
     Selector(SelectorExpr),
     Index(IndexExpr),
     Return(ReturnExpr),
-    Block(BlockExpr),
+    Lambda(LambdaExpr),
+    If(IfExpr),
     Null,
     Bad,
 }
@@ -51,8 +51,8 @@ impl ExprStmt {
         Self::Lit(LiteralExpr::String(span))
     }
 
-    pub fn lit_integer(span: Span) -> Self {
-        Self::Lit(LiteralExpr::Integer(span))
+    pub fn lit_integer(int: u128, ty: Option<IntTy>) -> Self {
+        Self::Lit(LiteralExpr::Integer { int, ty })
     }
 
     pub fn lit_float(span: Span) -> Self {
@@ -83,12 +83,20 @@ impl ExprStmt {
     pub fn r#return(expr: Option<Self>, at: Option<Ident>) -> Self {
         Self::Return(ReturnExpr {
             expr: expr.map(Box::new),
-            at,
+            label: at,
         })
     }
 
-    pub fn block(body: Block, at: Option<Ident>) -> Self {
-        Self::Block(BlockExpr { body, at })
+    pub fn lambda(body: Block, label: Option<Ident>) -> Self {
+        Self::Lambda(LambdaExpr { body, label })
+    }
+
+    pub fn r#if(cond: Self, then: Block, r#else: Option<Block>) -> Self {
+        Self::If(IfExpr {
+            cond: cond.into(),
+            then,
+            r#else,
+        })
     }
 
     #[inline]
@@ -112,11 +120,17 @@ impl ExprStmt {
 
 #[derive(Debug)]
 pub enum LiteralExpr {
-    Integer(Span),
+    Integer { int: u128, ty: Option<IntTy> },
     Float(Span),
     String(Span),
     Char(char),
     Boolean(bool),
+}
+
+#[derive(Debug)]
+pub enum IntTy {
+    Long,
+    Unsigned,
 }
 
 #[derive(Debug)]
@@ -176,13 +190,20 @@ pub struct IndexExpr {
 #[derive(Debug)]
 pub struct ReturnExpr {
     pub expr: Option<Box<ExprStmt>>,
-    pub at: Option<Ident>,
+    pub label: Option<Ident>,
 }
 
 #[derive(Debug)]
-pub struct BlockExpr {
+pub struct LambdaExpr {
     pub body: Block,
-    pub at: Option<Ident>,
+    pub label: Option<Ident>,
+}
+
+#[derive(Debug)]
+pub struct IfExpr {
+    pub cond: Box<ExprStmt>,
+    pub then: Block,
+    pub r#else: Option<Block>,
 }
 
 #[derive(Debug)]

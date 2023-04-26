@@ -1,6 +1,6 @@
 use crate::block::Block;
 use crate::expr::ExprStmt;
-use crate::Ident;
+use kotlin_span::Ident;
 use kotlin_span::Span;
 
 #[derive(Debug)]

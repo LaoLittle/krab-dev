@@ -1,11 +1,9 @@
 [package]
-name = "kotlin-codegen"
+name = "kotlin-hir"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-kotlin-ast = { path = "../kotlin-ast" }
 kotlin-span = { path = "../kotlin-span" }
-rustc-hash = "1.1.0"

@@ -1,6 +1,7 @@
 use self::Token::*;
-use kotlin_lexer::Cursor;
 use kotlin_lexer::TokenKind as LxTkKind;
+use kotlin_lexer::{Base, Cursor, LiteralKind};
+use kotlin_span::Span;
 
 pub struct TokenStream<'a> {
     source: &'a str,
@@ -66,11 +67,39 @@ impl<'a> TokenStream<'a> {
                 LxTkKind::CloseBracket => CloseBracket,
                 LxTkKind::OpenBrace => OpenBrace,
                 LxTkKind::CloseBrace => CloseBrace,
-                /*LxTkKind::Literal {
-                    kind, suffix_start
-                } => {
+                LxTkKind::Literal { kind, suffix_start } => {
+                    match kind {
+                        LiteralKind::Int { base, empty_int } => {
+                            if empty_int {
+                                Unknown
+                            } else {
+                                let mut suffix = None::<IntSuffix>;
+                                let mut intpos = self.prev_pos();
+                                let mut intlen = suffix_start;
+                                if !matches!(base, Base::Decimal) {
+                                    intpos += 2;
+                                    intlen -= 2;
+                                }
+                                // 0o 32 u
+                                let suff_start = self.prev_pos() + suffix_start as usize;
+                                if suff_start != self.pos() {
+                                    let span = Span::new_with_end(
+                                        self.prev_pos() + suffix_start as usize,
+                                        self.pos(),
+                                    );
+                                    suffix = Some(IntSuffix::from_source(self.source(), span));
+                                }
+                                let intsp = Span::new(intpos, intlen);
+                                let intstr = intsp.str_slice(self.source());
+                                let int = u128::from_str_radix(intstr, base as u32);
 
-                }*/
+                                int.map(|i| Literal(Literal::Integer { int: i, suffix }))
+                                    .unwrap_or(Unknown)
+                            }
+                        }
+                        _ => unimplemented!(),
+                    }
+                }
                 LxTkKind::Eq => match self.peek_next().kind {
                     LxTkKind::Eq => {
                         self.bump();
@@ -271,6 +300,7 @@ fn keyword_or_ident(s: &str) -> Token {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
+    Literal(Literal),
     Abstract,
     /// .
     Dot,
@@ -434,4 +464,32 @@ pub enum Token {
     Eof,
     /// unknown token
     Unknown,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Literal {
+    Integer {
+        int: u128,
+        suffix: Option<IntSuffix>,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum IntSuffix {
+    // 1L
+    Long,
+    // 1u
+    Unsigned,
+    Unknown(Span),
+}
+
+impl IntSuffix {
+    pub fn from_source(source: &str, span: Span) -> Self {
+        let s = span.str_slice(source);
+        match s {
+            "L" => Self::Long,
+            "u" => Self::Unsigned,
+            _ => Self::Unknown(span),
+        }
+    }
 }

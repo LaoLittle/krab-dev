@@ -1,6 +1,5 @@
 use crate::stream::Token;
 use crate::Parser;
-use kotlin_ast::block::Block;
 use kotlin_ast::decl::{FunArg, FunDecl, ImportDecl, PackageDecl};
 use kotlin_span::Span;
 

@@ -1,7 +1,7 @@
 use crate::errors::Error;
 use crate::stream::{Token, TokenStream};
-use kotlin_ast::Ident;
 use kotlin_span::symbol::Symbol;
+use kotlin_span::Ident;
 use kotlin_span::Span;
 
 mod block;
@@ -334,5 +334,63 @@ mod tests {
         let parser = Parser::new("abc\ncdbb\ndada");
 
         println!("{:?}", parser.get_line(12));
+    }
+
+    #[test]
+    fn if_expr() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+        if ((true && bbb))
+{
+        (false || a)
+        } else true
+        "#,
+            );
+
+            for _ in 0..1 {
+                println!("{:#?}", parser.parse_expr());
+            }
+
+            for error in parser.errors() {
+                println!("{error}");
+            }
+        });
+    }
+
+    #[test]
+    fn while_stmt() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+                while (true) {}
+                "#,
+            );
+            println!("{:?}", parser.parse_stmt());
+        });
+    }
+
+    #[test]
+    fn for_stmt() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+                for (i in a..b) {}
+                "#,
+            );
+            println!("{:?}", parser.parse_stmt());
+        });
+    }
+
+    #[test]
+    fn integer() {
+        with_global_session_init(|| {
+            let mut parser = Parser::new(
+                r#"
+                1233 * 322
+                "#,
+            );
+            println!("{:?}", parser.parse_stmt());
+        });
     }
 }

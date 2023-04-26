@@ -9,6 +9,10 @@ pub enum Error {
         actual: Token,
         span: Span,
     },
+    UnknownSuffix {
+        span: Span,
+        suffix: Span,
+    },
 }
 
 impl Display for Error {
@@ -27,6 +31,9 @@ impl Display for Error {
                     span.pos(),
                     span.end()
                 )?;
+            }
+            Self::UnknownSuffix { span, suffix } => {
+                write!(f, "unknown suffix at {span:?}, suffix {suffix:?}")?;
             }
         }
 

@@ -1,7 +1,7 @@
 use crate::stream::Token;
 use crate::Parser;
 use kotlin_ast::decl::{DeclStmt, VarKind, VariableDecl};
-use kotlin_ast::stmt::Stmt;
+use kotlin_ast::stmt::{ForStmt, Stmt, WhileStmt};
 
 impl<'a> Parser<'a> {
     pub fn parse_stmt_list(&mut self) -> Vec<Stmt> {
@@ -20,11 +20,43 @@ impl<'a> Parser<'a> {
             Token::Fun => Stmt::Decl(DeclStmt::Fun(self.parse_fun_decl())),
             Token::Val => Stmt::Decl(DeclStmt::Variable(self.parse_variable_decl(false))),
             Token::Var => Stmt::Decl(DeclStmt::Variable(self.parse_variable_decl(true))),
+            Token::While => Stmt::While(self.parse_while_stmt()),
+            Token::For => Stmt::For(self.parse_for_stmt()),
             Token::Semi | Token::Eof => Stmt::Empty,
             tk => {
                 self.lookahead = Some(tk);
                 Stmt::Expr(self.parse_expr())
             }
+        }
+    }
+
+    pub fn parse_while_stmt(&mut self) -> WhileStmt {
+        self.expect_skip_nl(Token::OpenParen);
+        let cond = self.parse_expr();
+        self.expect_skip_nl(Token::CloseParen);
+
+        let b = self.parse_block_even_single_expr();
+
+        WhileStmt {
+            cond: cond.into(),
+            body: b,
+        }
+    }
+
+    pub fn parse_for_stmt(&mut self) -> ForStmt {
+        self.expect_skip_nl(Token::OpenParen);
+        self.expect_skip_nl(Token::Ident);
+        let val = self.last_ident();
+        self.expect_skip_nl(Token::In);
+        let target = self.parse_expr();
+        self.expect_skip_nl(Token::CloseParen);
+
+        let body = self.parse_block_even_single_expr();
+
+        ForStmt {
+            bind: val,
+            target: target.into(),
+            body,
         }
     }
 

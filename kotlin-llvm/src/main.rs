@@ -12,12 +12,12 @@ use kotlin_span::with_global_session_init;
 use llvm_sys::core::{
     LLVMAddFunction, LLVMAppendBasicBlockInContext, LLVMBuildAdd, LLVMBuildAlloca, LLVMBuildBr,
     LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildICmp, LLVMBuildLoad2, LLVMBuildMul, LLVMBuildNot,
-    LLVMBuildRet, LLVMBuildStore, LLVMBuildSub, LLVMBuildTrunc, LLVMConstInt, LLVMContextCreate,
-    LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder, LLVMDisposeModule,
-    LLVMDumpModule, LLVMFunctionType, LLVMGetCalledFunctionType, LLVMGetParam, LLVMGetReturnType,
-    LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext, LLVMInt64TypeInContext,
-    LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext, LLVMPositionBuilderAtEnd,
-    LLVMVoidTypeInContext,
+    LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildStore, LLVMBuildSub, LLVMBuildTrunc, LLVMConstInt,
+    LLVMContextCreate, LLVMContextDispose, LLVMCreateBuilderInContext, LLVMDisposeBuilder,
+    LLVMDisposeModule, LLVMDumpModule, LLVMFunctionType, LLVMGetCalledFunctionType, LLVMGetParam,
+    LLVMGetReturnType, LLVMInt16TypeInContext, LLVMInt1TypeInContext, LLVMInt32TypeInContext,
+    LLVMInt64TypeInContext, LLVMInt8TypeInContext, LLVMModuleCreateWithNameInContext,
+    LLVMPositionBuilderAtEnd, LLVMVoidTypeInContext,
 };
 use llvm_sys::prelude::{
     LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMModuleRef, LLVMTypeRef, LLVMValueRef,
@@ -385,7 +385,7 @@ impl Visitor {
 
     pub unsafe fn visit_return_expr(
         &mut self,
-        ReturnExpr { expr, at: _ }: ReturnExpr,
+        ReturnExpr { expr, label: _ }: ReturnExpr,
     ) -> Option<Value> {
         let val = expr.map(|expr| self.visit_expr(*expr, false))?;
 
@@ -491,6 +491,10 @@ impl Visitor {
         let Block { stmts, span: _ } = body;
         for stmt in stmts {
             self.visit_stmt(stmt);
+        }
+
+        if ret == Type::Unit {
+            LLVMBuildRetVoid(self.builder);
         }
 
         self.curr_fn = prev;
@@ -599,6 +603,37 @@ mod tests {
     use crate::Visitor;
     use kotlin_parse::Parser;
     use kotlin_span::with_global_session_init;
+    use llvm_sys::core::{
+        LLVMCreatePassManager, LLVMDisposePassManager, LLVMGetGlobalPassRegistry,
+        LLVMRunPassManager,
+    };
+    use llvm_sys::initialization::LLVMInitializeInstCombine;
+    use llvm_sys::target::{
+        LLVMCopyStringRepOfTargetData, LLVMInitializeAArch64AsmPrinter,
+        LLVMInitializeAArch64Target, LLVMInitializeX86Target, LLVMSetModuleDataLayout,
+        LLVM_InitializeAllAsmParsers, LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllTargetInfos,
+        LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets, LLVM_InitializeNativeTarget,
+    };
+    use llvm_sys::target_machine::{
+        LLVMCodeGenFileType, LLVMCodeGenOptLevel, LLVMCodeModel, LLVMCreateTargetDataLayout,
+        LLVMCreateTargetMachine, LLVMGetDefaultTargetTriple, LLVMGetFirstTarget,
+        LLVMGetHostCPUFeatures, LLVMGetHostCPUName, LLVMGetTargetFromName, LLVMGetTargetFromTriple,
+        LLVMGetTargetName, LLVMRelocMode, LLVMTargetMachineEmitToFile,
+    };
+    use llvm_sys::transforms::instcombine::LLVMAddInstructionCombiningPass;
+    use llvm_sys::transforms::ipo::LLVMAddDeadArgEliminationPass;
+    use llvm_sys::transforms::pass_manager_builder::{
+        LLVMPassManagerBuilderCreate, LLVMPassManagerBuilderDispose,
+        LLVMPassManagerBuilderSetOptLevel, LLVMPassManagerBuilderSetSizeLevel,
+    };
+    use llvm_sys::transforms::scalar::{
+        LLVMAddDCEPass, LLVMAddDeadStoreEliminationPass, LLVMAddDemoteMemoryToRegisterPass,
+        LLVMAddGVNPass, LLVMAddMemCpyOptPass, LLVMAddSCCPPass,
+    };
+    use llvm_sys::transforms::util::LLVMAddPromoteMemoryToRegisterPass;
+    use std::ffi::CStr;
+    use std::io::{stdout, Write};
+    use std::ptr::null_mut;
 
     #[test]
     fn logic() {
@@ -607,7 +642,7 @@ mod tests {
             fun a(): Boolean {
                 val da = true
                 val b = false
-                return da || (da && b) || b
+                return (da || (da && b) || b)
             }
 
             var da = a()
@@ -625,6 +660,51 @@ mod tests {
                     eprintln!("Error: {}", err);
                 }
                 vis.dump();
+
+                LLVM_InitializeAllTargetInfos();
+                LLVM_InitializeAllTargets();
+                LLVM_InitializeAllTargetMCs();
+                LLVM_InitializeAllAsmParsers();
+                LLVM_InitializeAllAsmPrinters();
+                //LLVM_InitializeNativeTarget();
+
+                let mut target = null_mut();
+                let mut error = null_mut();
+                LLVMGetTargetFromTriple(
+                    "aarch64-apple-darwin".as_ptr() as _,
+                    &mut target,
+                    &mut error,
+                );
+
+                let n = LLVMGetTargetName(target);
+                println!("{:?}", CStr::from_ptr(n));
+                let tm = LLVMCreateTargetMachine(
+                    target,
+                    LLVMGetDefaultTargetTriple(),
+                    //"generic\0".as_ptr() as _,
+                    LLVMGetHostCPUName(),
+                    LLVMGetHostCPUFeatures(),
+                    LLVMCodeGenOptLevel::LLVMCodeGenLevelDefault,
+                    LLVMRelocMode::LLVMRelocDefault,
+                    LLVMCodeModel::LLVMCodeModelDefault,
+                );
+
+                let td = LLVMCreateTargetDataLayout(tm);
+                let s = LLVMCopyStringRepOfTargetData(td);
+                println!("{:?}", CStr::from_ptr(s));
+                LLVMSetModuleDataLayout(vis.module, td);
+
+                LLVMTargetMachineEmitToFile(
+                    tm,
+                    vis.module,
+                    "abc.s\0".as_ptr() as _,
+                    LLVMCodeGenFileType::LLVMAssemblyFile,
+                    &mut error,
+                );
+
+                if error != null_mut() {
+                    eprintln!("error: {:?}", CStr::from_ptr(error));
+                }
             });
         }
     }

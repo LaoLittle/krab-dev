@@ -2,8 +2,8 @@
 members = [
     "kotlin-lexer",
     "kotlin-ast",
+    "kotlin-hir",
     "kotlin-parse",
     "kotlin-span",
-    "kotlin-codegen",
     "kotlin-llvm"
 ]

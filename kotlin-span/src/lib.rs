@@ -7,6 +7,28 @@ use std::ops::{DerefMut, Range};
 pub mod package;
 pub mod symbol;
 
+#[derive(Copy, Clone, Debug)]
+pub struct Ident {
+    symbol: Symbol,
+    span: Span,
+}
+
+impl Ident {
+    #[inline]
+    pub const fn new(symbol: Symbol, span: Span) -> Self {
+        Self { symbol, span }
+    }
+
+    pub const fn symbol(self) -> Symbol {
+        self.symbol
+    }
+
+    #[inline]
+    pub const fn span(self) -> Span {
+        self.span
+    }
+}
+
 scoped_thread_local!(static GLOBAL_SESSION: GlobalSession);
 
 pub fn with_global_session_init<F: FnOnce() -> R, R>(f: F) -> R {
@@ -41,7 +63,7 @@ impl GlobalSession {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Span {
     pos: usize,
     len: u32,

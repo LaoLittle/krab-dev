@@ -1,11 +1,13 @@
 use super::Parser;
-use crate::stream::Token;
-use kotlin_ast::expr::{BinaryOp, ExprStmt, UnaryOp};
-use kotlin_ast::Ident;
+use crate::errors::Error;
+use crate::stream::{IntSuffix, Literal, Token};
+use kotlin_ast::block::Block;
+use kotlin_ast::expr::{BinaryOp, ExprStmt, IntTy, UnaryOp};
+use kotlin_ast::stmt::Stmt;
+use kotlin_span::Ident;
 use kotlin_span::Span;
 
 impl<'a> Parser<'a> {
-    /// unary_expr -> '(' expr ')' | unary_op expr |
     pub fn parse_expr(&mut self) -> ExprStmt {
         let expr = self.parse_unary_expr();
         let expr = self.parse_binary_expr(expr, 0, Self::peek_token);
@@ -13,10 +15,10 @@ impl<'a> Parser<'a> {
         expr
     }
 
-    pub fn parse_block_expr(&mut self, at: Option<Ident>) -> ExprStmt {
+    pub fn parse_lambda_expr(&mut self, label: Option<Ident>) -> ExprStmt {
         let body = self.parse_block();
 
-        ExprStmt::block(body, at)
+        ExprStmt::lambda(body, label)
     }
 
     pub fn parse_unary_expr(&mut self) -> ExprStmt {
@@ -25,6 +27,24 @@ impl<'a> Parser<'a> {
                 Token::True => ExprStmt::lit_bool(true),
                 Token::False => ExprStmt::lit_bool(false),
                 _ => unreachable!(),
+            },
+            Token::Literal(lit) => match lit {
+                Literal::Integer { int, suffix } => {
+                    let suffix = match suffix {
+                        Some(IntSuffix::Long) => Some(IntTy::Long),
+                        Some(IntSuffix::Unsigned) => Some(IntTy::Unsigned),
+                        Some(IntSuffix::Unknown(sp)) => {
+                            self.errors.push(Error::UnknownSuffix {
+                                span: self.last_span(),
+                                suffix: sp,
+                            });
+                            None
+                        }
+                        None => None,
+                    };
+
+                    ExprStmt::lit_integer(int, suffix)
+                }
             },
             Token::OpenParen => {
                 let e = self.parse_unary_expr();
@@ -38,7 +58,7 @@ impl<'a> Parser<'a> {
                     Token::At => {
                         self.bump();
                         self.expect_skip_nl(Token::OpenBrace);
-                        let expr = self.parse_block_expr(Some(id));
+                        let expr = self.parse_lambda_expr(Some(id));
                         self.expect_skip_nl(Token::CloseBrace);
                         expr
                     }
@@ -65,7 +85,7 @@ impl<'a> Parser<'a> {
                 ExprStmt::unary(unop, e)
             }
             Token::OpenBrace => {
-                let expr = self.parse_block_expr(None);
+                let expr = self.parse_lambda_expr(None);
                 self.expect_skip_nl(Token::CloseBrace);
                 expr
             }
@@ -93,6 +113,7 @@ impl<'a> Parser<'a> {
 
                 ExprStmt::r#return(expr, at)
             }
+            Token::If => self.parse_if_expr(),
             Token::Null => ExprStmt::null(),
             tk => {
                 self.lookahead = Some(tk);
@@ -202,16 +223,23 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_assoc_expr(&mut self, expr: ExprStmt) -> Result<ExprStmt, ExprStmt> {
+        match self.peek_token() {
+            // function call
+            // expr\n(expr)
+            // -x> expr(expr)
+            // --> [expr, (expr)]
+            Token::OpenParen => {
+                let args = self.parse_call_args();
+                self.expect_skip_nl(Token::CloseParen);
+
+                return Ok(ExprStmt::call(expr, args));
+            }
+            _ => {}
+        }
+
         let mut nl = false;
         Ok(loop {
             break match self.advance_token() {
-                // function call
-                Token::OpenParen => {
-                    let args = self.parse_call_args();
-                    self.expect_skip_nl(Token::CloseParen);
-
-                    ExprStmt::call(expr, args)
-                }
                 Token::OpenBracket => {
                     let idx = self.parse_expr();
                     self.expect_skip_nl(Token::CloseBracket);
@@ -240,7 +268,23 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_call_args(&mut self) -> Vec<ExprStmt> {
+    pub fn parse_if_expr(&mut self) -> ExprStmt {
+        self.expect_skip_nl(Token::OpenParen);
+        let cond = self.parse_expr();
+        self.expect_skip_nl(Token::CloseParen);
+        let then = self.parse_block_even_single_expr();
+
+        let r#else = if let Token::Else = self.peek_token_skip_nl() {
+            self.bump();
+            Some(self.parse_block_even_single_expr())
+        } else {
+            None
+        };
+
+        ExprStmt::r#if(cond, then, r#else)
+    }
+
+    fn parse_call_args(&mut self) -> Vec<ExprStmt> {
         let mut args = Vec::new();
 
         if let Token::CloseParen = self.peek_token_skip_nl() {
