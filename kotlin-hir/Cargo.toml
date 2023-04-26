@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 kotlin-span = { path = "../kotlin-span" }
+kotlin-parse = { path = "../kotlin-parse" }

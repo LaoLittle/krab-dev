@@ -9,18 +9,25 @@ pub enum Stmt {
     Expr(ExprStmt),
     While(WhileStmt),
     For(ForStmt),
+    Assign(AssignStmt),
     Empty,
 }
 
 #[derive(Debug)]
 pub struct WhileStmt {
-    pub cond: Box<ExprStmt>,
+    pub cond: ExprStmt,
     pub body: Block,
 }
 
 #[derive(Debug)]
 pub struct ForStmt {
     pub bind: Ident,
-    pub target: Box<ExprStmt>,
+    pub target: ExprStmt,
     pub body: Block,
+}
+
+#[derive(Debug)]
+pub struct AssignStmt {
+    pub id: Ident,
+    pub expr: ExprStmt
 }

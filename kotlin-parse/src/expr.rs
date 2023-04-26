@@ -1,11 +1,8 @@
 use super::Parser;
 use crate::errors::Error;
 use crate::stream::{IntSuffix, Literal, Token};
-use kotlin_ast::block::Block;
 use kotlin_ast::expr::{BinaryOp, ExprStmt, IntTy, UnaryOp};
-use kotlin_ast::stmt::Stmt;
 use kotlin_span::Ident;
-use kotlin_span::Span;
 
 impl<'a> Parser<'a> {
     pub fn parse_expr(&mut self) -> ExprStmt {

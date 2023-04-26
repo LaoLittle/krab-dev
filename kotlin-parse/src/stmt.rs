@@ -1,7 +1,8 @@
 use crate::stream::Token;
 use crate::Parser;
 use kotlin_ast::decl::{DeclStmt, VarKind, VariableDecl};
-use kotlin_ast::stmt::{ForStmt, Stmt, WhileStmt};
+use kotlin_ast::expr::ExprStmt;
+use kotlin_ast::stmt::{AssignStmt, ForStmt, Stmt, WhileStmt};
 
 impl<'a> Parser<'a> {
     pub fn parse_stmt_list(&mut self) -> Vec<Stmt> {
@@ -23,6 +24,24 @@ impl<'a> Parser<'a> {
             Token::While => Stmt::While(self.parse_while_stmt()),
             Token::For => Stmt::For(self.parse_for_stmt()),
             Token::Semi | Token::Eof => Stmt::Empty,
+            Token::Ident => {
+                    let id = self.last_ident();
+                    match self.peek_token() {
+                        Token::At => {
+                            self.bump();
+                            self.expect_skip_nl(Token::OpenBrace);
+                            let expr = self.parse_lambda_expr(Some(id));
+                            self.expect_skip_nl(Token::CloseBrace);
+                            Stmt::Expr(expr)
+                        }
+                        Token::Assign => {
+                            self.bump();
+                            let expr = self.parse_expr();
+                            Stmt::Assign(AssignStmt { id, expr })
+                        }
+                        _ => Stmt::Expr(ExprStmt::Ident(id)),
+                    }
+            }
             tk => {
                 self.lookahead = Some(tk);
                 Stmt::Expr(self.parse_expr())
@@ -38,7 +57,7 @@ impl<'a> Parser<'a> {
         let b = self.parse_block_even_single_expr();
 
         WhileStmt {
-            cond: cond.into(),
+            cond,
             body: b,
         }
     }
@@ -55,7 +74,7 @@ impl<'a> Parser<'a> {
 
         ForStmt {
             bind: val,
-            target: target.into(),
+            target,
             body,
         }
     }
