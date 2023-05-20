@@ -8,7 +8,6 @@ mod block;
 mod decl;
 mod errors;
 mod expr;
-mod file;
 mod stmt;
 mod stream;
 
