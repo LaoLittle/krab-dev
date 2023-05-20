@@ -681,7 +681,7 @@ mod tests {
                 LLVMTargetMachineEmitToFile(
                     tm,
                     vis.module,
-                    "abc.s\0".as_ptr() as _,
+                    "test.s\0".as_ptr() as _,
                     LLVMCodeGenFileType::LLVMAssemblyFile,
                     &mut error,
                 );
