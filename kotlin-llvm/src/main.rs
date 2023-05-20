@@ -23,9 +23,10 @@ use llvm_sys::prelude::{
 };
 use llvm_sys::LLVMIntPredicate;
 use std::collections::HashMap;
-use std::ffi::CString;
+use std::ffi::{c_char, CStr, CString};
 use std::path::PathBuf;
-use std::ptr::null_mut;
+use std::ptr::{NonNull, null_mut};
+use llvm_sys::error::LLVMDisposeErrorMessage;
 
 fn main() {
     let cmd = clap::Command::new("kotlincn")
@@ -618,6 +619,7 @@ mod tests {
     use std::ffi::CStr;
 
     use std::ptr::null_mut;
+    use llvm_sys::error::LLVMDisposeErrorMessage;
 
     #[test]
     fn logic() {
@@ -688,6 +690,7 @@ mod tests {
 
                 if error != null_mut() {
                     eprintln!("error: {:?}", CStr::from_ptr(error));
+                    LLVMDisposeErrorMessage(error);
                 }
             });
         }
