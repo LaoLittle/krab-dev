@@ -32,7 +32,7 @@ pub struct Variable {
     pub initialized: bool,
 }
 
-impl<T> Variable {}
+impl Variable {}
 
 #[derive(Debug)]
 pub struct Stmt {}

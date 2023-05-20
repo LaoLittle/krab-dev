@@ -23,10 +23,10 @@ use llvm_sys::prelude::{
 };
 use llvm_sys::LLVMIntPredicate;
 use std::collections::HashMap;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CString};
 use std::path::PathBuf;
-use std::ptr::{NonNull, null_mut};
-use llvm_sys::error::LLVMDisposeErrorMessage;
+use std::ptr::{null_mut};
+
 
 fn main() {
     let cmd = clap::Command::new("kotlincn")
