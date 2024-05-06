@@ -1,6 +1,6 @@
 use crate::block::Block;
 use crate::ty::Type;
-use kotlin_ast::expr::{BinaryOp, CallExpr, UnaryOp};
+use kotlin_ast::expr::{BinaryOp, UnaryOp};
 use kotlin_span::Ident;
 
 #[derive(Debug)]

@@ -1,6 +1,5 @@
 use crate::symbol::{Symbol, SymbolName};
 use indexmap::IndexSet;
-use rustc_hash::FxHashMap;
 use scoped_tls::scoped_thread_local;
 use std::borrow::Cow;
 use std::cell::RefCell;
