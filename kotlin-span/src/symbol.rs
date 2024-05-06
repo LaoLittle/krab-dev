@@ -1,16 +1,20 @@
 use crate::with_global_session;
+use std::borrow::Cow;
+use std::fmt::{Debug, Formatter};
 
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct Symbol(u32);
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Symbol(pub(crate) usize);
+
+pub type SymbolName = Cow<'static, str>;
 
 impl Symbol {
     #[inline]
-    pub const fn new(i: u32) -> Self {
+    pub const fn new(i: usize) -> Self {
         Self(i)
     }
 
     #[inline]
-    pub const fn as_u32(self) -> u32 {
+    pub const fn as_index(self) -> usize {
         self.0
     }
 
@@ -18,7 +22,17 @@ impl Symbol {
         with_global_session(|g| g.interner().intern(s))
     }
 
-    pub fn as_str(&self) -> &str {
-        with_global_session(|g| g.interner().get(*self))
+    pub fn as_str(&self) -> SymbolName {
+        with_global_session(|g| g.interner().get(*self).clone())
+    }
+}
+
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        with_global_session(|g| {
+            f.debug_tuple("Symbol")
+                .field(g.interner().get(*self))
+                .finish()
+        })
     }
 }

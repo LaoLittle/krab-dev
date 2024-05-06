@@ -15,6 +15,7 @@ pub enum ExprStmt {
     Return(ReturnExpr),
     Lambda(LambdaExpr),
     If(IfExpr),
+    As(AsExpr),
     Null,
     Bad,
 }
@@ -55,8 +56,8 @@ impl ExprStmt {
         Self::Lit(LiteralExpr::Integer { int, ty })
     }
 
-    pub fn lit_float(span: Span) -> Self {
-        Self::Lit(LiteralExpr::Float(span))
+    pub fn lit_float(float: f64, ty: Option<FloatTy>) -> Self {
+        Self::Lit(LiteralExpr::Float { float, ty })
     }
 
     pub fn call(expr: Self, args: Vec<Self>) -> Self {
@@ -99,6 +100,14 @@ impl ExprStmt {
         })
     }
 
+    /// expr as target
+    pub fn r#as(expr: Self, target: Ident) -> Self {
+        Self::As(AsExpr {
+            expr: expr.into(),
+            target,
+        })
+    }
+
     #[inline]
     pub const fn null() -> Self {
         Self::Null
@@ -109,6 +118,7 @@ impl ExprStmt {
         Self::Bad
     }
 
+    #[inline]
     pub fn peel_paren(mut self) -> Self {
         while let ExprStmt::Paren(expr) = self {
             self = *expr;
@@ -121,7 +131,7 @@ impl ExprStmt {
 #[derive(Debug)]
 pub enum LiteralExpr {
     Integer { int: u128, ty: Option<IntTy> },
-    Float(Span),
+    Float { float: f64, ty: Option<FloatTy> },
     String(Span),
     Char(char),
     Boolean(bool),
@@ -131,6 +141,11 @@ pub enum LiteralExpr {
 pub enum IntTy {
     Long,
     Unsigned,
+}
+
+#[derive(Debug)]
+pub enum FloatTy {
+    Float32,
 }
 
 #[derive(Debug)]
@@ -146,7 +161,7 @@ pub struct SelectorExpr {
 /// (expr)()
 #[derive(Debug)]
 pub struct CallExpr {
-    pub expr: Box<ExprStmt>, // func can be lambda
+    pub expr: Box<ExprStmt>, // func can be a lambda
     pub args: Vec<ExprStmt>,
 }
 
@@ -156,7 +171,7 @@ pub struct UnaryExpr {
     pub expr: Box<ExprStmt>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum UnaryOp {
     /// "+"
     Positive,
@@ -207,6 +222,12 @@ pub struct IfExpr {
 }
 
 #[derive(Debug)]
+pub struct AsExpr {
+    pub expr: Box<ExprStmt>,
+    pub target: Ident,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum BinaryOp {
     /// "+"
     Add,
@@ -218,10 +239,20 @@ pub enum BinaryOp {
     Div,
     /// "%"
     Rem,
+    /// "&" (bitwise and)
+    BAnd,
+    /// "|" (bitwise or)
+    BOr,
+    /// "^" (bitwise xor)
+    BXor,
+    /// "<<"
+    Shl,
+    /// ">>"
+    Shr,
     /// "&&" (logic and)
-    And,
+    LAnd,
     /// "||" (logic or)
-    Or,
+    LOr,
     /// "==" (equals to)
     Eq,
     /// "===" (exactly eq)
@@ -230,7 +261,7 @@ pub enum BinaryOp {
     Gt,
     /// ">=" (greater eq)
     Ge,
-    /// "<" (less then)
+    /// "<" (less than)
     Lt,
     /// "<=" (less eq)
     Le,
@@ -249,8 +280,9 @@ pub enum BinaryOp {
 impl BinaryOp {
     pub const fn precedence(&self) -> u32 {
         match self {
-            Self::Or => 10,  // Disjunction
-            Self::And => 20, // Conjunction
+            Self::BAnd | Self::BOr | Self::BXor | Self::Shl | Self::Shr => 5,
+            Self::LOr => 10,  // Disjunction
+            Self::LAnd => 20, // Conjunction
             Self::Eq
             | Self::ExEq
             | Self::Ne

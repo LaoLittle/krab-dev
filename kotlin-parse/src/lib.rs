@@ -1,5 +1,6 @@
 use crate::errors::Error;
 use crate::stream::{Token, TokenStream};
+use kotlin_ast::expr::BinaryOp;
 use kotlin_span::symbol::Symbol;
 use kotlin_span::Ident;
 use kotlin_span::Span;
@@ -14,6 +15,7 @@ mod stream;
 pub struct Parser<'a> {
     stream: TokenStream<'a>,
     lookahead: Option<Token>,
+    binop: Option<BinaryOp>,
     keep_nl: bool,
     errors: Vec<Error>,
 }
@@ -25,6 +27,7 @@ impl<'a> Parser<'a> {
             stream: TokenStream::new(input),
             lookahead: None,
             keep_nl: false,
+            binop: None,
             errors: vec![],
         }
     }
@@ -173,7 +176,6 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{Parser, TokenStream};
     use kotlin_ast::decl::{DeclStmt, FunDecl, PackageDecl};
     use kotlin_ast::stmt::Stmt;
@@ -193,12 +195,15 @@ mod tests {
     }
 
     #[test]
-    fn parse() {
+    fn expr() {
         with_global_session_init(|| {
             let prev = Instant::now();
             let mut parser = Parser::new(
                 r#"
-        dad(min.a().c())
+        pray(
+        min
+            .a()
+            .c() + 2 as UInt + 2.0e10f) * (23 + 123 * 456L >> 114 << 514).toFloat()
         "#,
             );
             let expr = parser.parse_expr();
@@ -387,10 +392,10 @@ mod tests {
         with_global_session_init(|| {
             let mut parser = Parser::new(
                 r#"
-                23+123 * 456L
+                23 + 123 * 456L >> 114 << 514
                 "#,
             );
-            println!("{:?}", parser.parse_stmt());
+            println!("{:#?}", parser.parse_stmt());
         });
     }
 }

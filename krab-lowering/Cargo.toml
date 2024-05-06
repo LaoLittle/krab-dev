@@ -1,0 +1,17 @@
+[package]
+name = "krab-lowering"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smallvec = "2.0.0-alpha.5"
+typed-arena = "2.0.2"
+
+[dependencies.kotlin-span]
+path = "../kotlin-span"
+
+[dependencies.kotlin-ast]
+path = "../kotlin-ast"
+
+[dependencies.krab-tir]
+path = "../krab-tir"

@@ -722,7 +722,9 @@ impl Cursor<'_> {
         for _ in 0..2 {
             let c = self.bump();
             let Some('"') = c else {
-                return Err(RawStrError::InvalidStarter { bad_char: c.unwrap_or(EOF_CHAR) });
+                return Err(RawStrError::InvalidStarter {
+                    bad_char: c.unwrap_or(EOF_CHAR),
+                });
             };
         }
 

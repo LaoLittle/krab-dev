@@ -1,6 +1,8 @@
-use crate::symbol::Symbol;
+use crate::symbol::{Symbol, SymbolName};
+use indexmap::IndexSet;
 use rustc_hash::FxHashMap;
 use scoped_tls::scoped_thread_local;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ops::{DerefMut, Range};
 
@@ -104,8 +106,7 @@ impl Span {
 }
 
 pub struct Interner {
-    name_map: FxHashMap<&'static str, Symbol>,
-    strings: Vec<&'static str>,
+    map: IndexSet<SymbolName>,
 }
 
 macro_rules! pre_define_symbol {
@@ -113,7 +114,7 @@ macro_rules! pre_define_symbol {
         $(pub const $sym: $crate::symbol::Symbol = $crate::symbol::Symbol::new($num);)*
 
         fn _prefill(i: &mut Interner) {
-            $(i.intern_static($str);)*
+            $(i.intern_static($str, $num);)*
         }
     };
 }
@@ -129,15 +130,16 @@ pre_define_symbol! {
         "UInt16" => UINT16: 6;
         "UInt32" => UINT32: 7;
         "UInt64" => UINT64: 8;
-        "Unit" => UNIT: 9;
+        "Float32" => FLOAT32: 9;
+        "Float64" => FLOAT64: 10;
+        "Unit" => UNIT: 11;
     }
 }
 
 impl Interner {
     pub fn new() -> Self {
         Self {
-            name_map: FxHashMap::default(),
-            strings: vec![],
+            map: IndexSet::new(),
         }
     }
 
@@ -145,34 +147,26 @@ impl Interner {
         _prefill(self);
     }
 
-    pub fn intern_static(&mut self, str: &'static str) -> Symbol {
-        if let Some(&sym) = self.name_map.get(str) {
-            return sym;
-        }
-
-        let sym = Symbol::new(self.strings.len() as u32);
-        self.strings.push(str);
-        self.name_map.insert(str, sym);
-
-        sym
+    pub fn intern_static(&mut self, s: &'static str, index: usize) {
+        self.map.shift_insert(index, SymbolName::Borrowed(s));
     }
 
     pub fn intern(&mut self, s: &str) -> Symbol {
-        if let Some(&sym) = self.name_map.get(s) {
-            return sym;
+        if let Some(index) = self.map.get_index_of(s) {
+            return Symbol(index);
         }
 
-        let sym = Symbol::new(self.strings.len() as u32);
-        let str: &'static [u8] = s.to_owned().into_bytes().leak();
-        let str = std::str::from_utf8(str).unwrap();
-        self.strings.push(str);
-        self.name_map.insert(str, sym);
-
-        sym
+        self._insert(s.to_owned())
     }
 
-    pub fn get(&self, symbol: Symbol) -> &'static str {
-        self.strings[symbol.as_u32() as usize]
+    fn _insert<S: Into<Cow<'static, str>>>(&mut self, str: S) -> Symbol {
+        let (index, _) = self.map.insert_full(str.into());
+
+        Symbol(index)
+    }
+
+    pub fn get(&self, symbol: Symbol) -> &SymbolName {
+        self.map.get_index(symbol.as_index()).unwrap()
     }
 }
 

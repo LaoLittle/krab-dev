@@ -2,6 +2,7 @@ use self::Token::*;
 use kotlin_lexer::TokenKind as LxTkKind;
 use kotlin_lexer::{Base, Cursor, LiteralKind};
 use kotlin_span::Span;
+use std::str::FromStr;
 
 pub struct TokenStream<'a> {
     source: &'a str,
@@ -97,6 +98,35 @@ impl<'a> TokenStream<'a> {
                                     .unwrap_or(Unknown)
                             }
                         }
+                        LiteralKind::Float {
+                            base,
+                            empty_exponent,
+                        } => 'float: {
+                            if !matches!(base, Base::Decimal) {
+                                break 'float Unknown;
+                            }
+
+                            let mut suffix = None::<FloatSuffix>;
+                            let fpos = self.prev_pos();
+                            let flen = suffix_start;
+
+                            let suff_start = fpos + suffix_start as usize;
+                            if suff_start != self.pos() {
+                                let span = Span::new_with_end(
+                                    self.prev_pos() + suffix_start as usize,
+                                    self.pos(),
+                                );
+
+                                suffix = Some(FloatSuffix::from_source(self.source(), span));
+                            }
+
+                            let fsp = Span::new(fpos, flen);
+                            let fstr = fsp.str_slice(self.source());
+
+                            f64::from_str(fstr)
+                                .map(|float| Literal(Literal::Float { float, suffix }))
+                                .unwrap_or(Unknown)
+                        }
                         _ => unimplemented!(),
                     }
                 }
@@ -113,9 +143,9 @@ impl<'a> TokenStream<'a> {
                 LxTkKind::Gt => op_match!(Eq => GreaterEq; Greater),
                 LxTkKind::Lt => op_match!(Eq => LessEq; Less),
                 // kotlin have no bitand operator
-                LxTkKind::And => op_match!(And => And; Unknown),
+                LxTkKind::And => op_match!(And => LAnd; Unknown),
                 // kotlin have no bitor operator
-                LxTkKind::Or => op_match!(Or => Or; Unknown),
+                LxTkKind::Or => op_match!(Or => LOr; Unknown),
                 LxTkKind::Plus => op_match!(
                     Plus => Inc,
                     Eq => PlusAssign;
@@ -337,9 +367,9 @@ pub enum Token {
     /// }
     CloseBrace,
     /// &&
-    And,
+    LAnd,
     /// ||
-    Or,
+    LOr,
     /// !
     Not,
     /// ++
@@ -472,6 +502,10 @@ pub enum Literal {
         int: u128,
         suffix: Option<IntSuffix>,
     },
+    Float {
+        float: f64,
+        suffix: Option<FloatSuffix>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -489,6 +523,22 @@ impl IntSuffix {
         match s {
             "L" => Self::Long,
             "u" => Self::Unsigned,
+            _ => Self::Unknown(span),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum FloatSuffix {
+    Float32,
+    Unknown(Span),
+}
+
+impl FloatSuffix {
+    pub fn from_source(source: &str, span: Span) -> Self {
+        let s = span.str_slice(source);
+        match s {
+            "f" => Self::Float32,
             _ => Self::Unknown(span),
         }
     }

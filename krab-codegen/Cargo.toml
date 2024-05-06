@@ -1,0 +1,23 @@
+[package]
+name = "krab-codegen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.inkwell]
+version = "0.4.0"
+features = ["llvm17-0"]
+
+[dependencies.kotlin-ast]
+path = "../kotlin-ast"
+
+[dependencies.kotlin-parse]
+path = "../kotlin-parse"
+
+[dependencies.kotlin-span]
+path = "../kotlin-span"
+
+[dependencies.krab-lowering]
+path = "../krab-lowering"
+
+[dependencies.krab-tir]
+path = "../krab-tir"

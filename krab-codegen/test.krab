@@ -1,0 +1,46 @@
+fun fib(n: UInt64): UInt64 {
+    if (n <= 1) { return n }
+
+    return fib(n - 1) + fib(n - 2)
+}
+
+fun test(a: UInt32): Boolean {
+    val ret = if (a <= 0) true else false
+    return ret
+}
+
+fun abc(a: UInt64): Int64 {
+    val fuck = if (a >= 2) 1L else 2L
+
+    return fuck
+}
+
+fun bbc(a: Int32) {}
+
+fun test_bool(b: Boolean): Int32 {
+    return 114;
+}
+
+fun main() {
+    val a = 114
+    val b = 2
+
+    abc((a + 514) * 32 + 114 * 514)
+
+
+    // bbc(a) error: type mismatched
+    // bbc(a+b) error: type mismatched
+    bbc(b) // we are good here
+
+    val dd = false && true
+
+    test_bool(dd || true)
+}
+
+fun lowering() {
+    val a = 1 // this is an abstract int, the type is undefined here.
+
+    val b: UInt32 = a // the type is refined UInt32, abstract int would be lowered to the actual type.
+
+    // val c: Int32 = a // compile error.
+}

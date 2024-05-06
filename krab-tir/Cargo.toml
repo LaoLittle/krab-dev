@@ -1,0 +1,10 @@
+[package]
+name = "krab-tir"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.kotlin-span]
+path = "../kotlin-span"
+
+[dependencies.kotlin-ast]
+path = "../kotlin-ast"

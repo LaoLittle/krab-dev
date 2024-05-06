@@ -1,17 +1,12 @@
 use kotlin_span::Ident;
 
 #[derive(Debug)]
-pub struct ReferType {
-    /// suspect
-    pub sus: bool,
-    /// type
-    pub ty: Type,
-}
-
-#[derive(Debug)]
 pub enum Type {
     Unit,
     Boolean,
+    AbstractInt,
+    AbstractLongInt,
+    AbstractUnsignedInt,
     Int(IntTy),
     Class(),
 }
@@ -28,7 +23,7 @@ pub enum IntTy {
 pub struct Variable {
     pub assignable: bool,
     pub name: Ident,
-    pub ty: Option<ReferType>,
+    pub ty: Type,
     pub initialized: bool,
 }
 

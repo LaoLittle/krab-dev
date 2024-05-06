@@ -1,7 +1,7 @@
 use super::Parser;
 use crate::errors::Error;
-use crate::stream::{IntSuffix, Literal, Token};
-use kotlin_ast::expr::{BinaryOp, ExprStmt, IntTy, UnaryOp};
+use crate::stream::{FloatSuffix, IntSuffix, Literal, Token};
+use kotlin_ast::expr::{BinaryOp, ExprStmt, FloatTy, IntTy, UnaryOp};
 use kotlin_span::Ident;
 
 impl<'a> Parser<'a> {
@@ -30,14 +30,26 @@ impl<'a> Parser<'a> {
                     let suffix = match suffix {
                         Some(IntSuffix::Long) => Some(IntTy::Long),
                         Some(IntSuffix::Unsigned) => Some(IntTy::Unsigned),
-                        Some(IntSuffix::Unknown(sp)) => {
-                            self.errors.push(Error::UnknownSuffix { suffix: sp });
+                        Some(IntSuffix::Unknown(suffix)) => {
+                            self.errors.push(Error::UnknownSuffix { suffix });
                             None
                         }
                         None => None,
                     };
 
                     ExprStmt::lit_integer(int, suffix)
+                }
+                Literal::Float { float, suffix } => {
+                    let suffix = match suffix {
+                        Some(FloatSuffix::Float32) => Some(FloatTy::Float32),
+                        Some(FloatSuffix::Unknown(suffix)) => {
+                            self.errors.push(Error::UnknownSuffix { suffix });
+                            None
+                        }
+                        None => None,
+                    };
+
+                    ExprStmt::lit_float(float, suffix)
                 }
             },
             Token::OpenParen => {
@@ -127,14 +139,30 @@ impl<'a> Parser<'a> {
         peek: fn(&mut Self) -> Token,
     ) -> ExprStmt {
         loop {
+            if let Some(binop) = self.binop.take() {
+                let rprec = binop.precedence();
+
+                // 0 a 60 + 61 b 70 * 71 c 60 + 61 dd
+                if lprec < rprec {
+                    let rhs = self.parse_unary_expr();
+                    let rhs = self.parse_binary_expr(rhs, rprec + 1, peek);
+
+                    lhs = ExprStmt::binary(binop, lhs, rhs);
+                    continue;
+                } else {
+                    self.binop = Some(binop);
+                    break;
+                }
+            }
+
             match peek(self) {
-                binop @ (Token::Plus
+                tk @ (Token::Plus
                 | Token::Minus
                 | Token::Mul
                 | Token::Div
                 | Token::Rem
-                | Token::And
-                | Token::Or
+                | Token::LAnd
+                | Token::LOr
                 | Token::Eq
                 | Token::ExactEq
                 | Token::Greater
@@ -146,40 +174,59 @@ impl<'a> Parser<'a> {
                 | Token::Elvis
                 | Token::DotDot
                 | Token::Ident) => {
-                    let binop = match binop {
-                        Token::Plus => BinaryOp::Add,
-                        Token::Minus => BinaryOp::Sub,
-                        Token::Mul => BinaryOp::Mul,
-                        Token::Div => BinaryOp::Div,
-                        Token::Rem => BinaryOp::Rem,
-                        Token::And => BinaryOp::And,
-                        Token::Or => BinaryOp::Or,
-                        Token::Eq => BinaryOp::Eq,
-                        Token::ExactEq => BinaryOp::ExEq,
-                        Token::Greater => BinaryOp::Gt,
-                        Token::GreaterEq => BinaryOp::Ge,
-                        Token::Less => BinaryOp::Lt,
-                        Token::LessEq => BinaryOp::Le,
-                        Token::NotEq => BinaryOp::Ne,
-                        Token::NotExactEq => BinaryOp::ExNe,
-                        Token::Elvis => BinaryOp::Elvis,
-                        Token::DotDot => BinaryOp::Range,
-                        Token::Ident => BinaryOp::Infix,
-                        _ => unreachable!(),
+                    self.bump();
+
+                    let binop = match (tk, self.peek_token()) {
+                        (Token::Less, Token::Less) => {
+                            self.bump();
+                            BinaryOp::Shl
+                        }
+                        (Token::Greater, Token::Greater) => {
+                            self.bump();
+                            BinaryOp::Shr
+                        }
+                        (tk, _) => match tk {
+                            Token::Plus => BinaryOp::Add,
+                            Token::Minus => BinaryOp::Sub,
+                            Token::Mul => BinaryOp::Mul,
+                            Token::Div => BinaryOp::Div,
+                            Token::Rem => BinaryOp::Rem,
+                            Token::LAnd => BinaryOp::LAnd,
+                            Token::LOr => BinaryOp::LOr,
+                            Token::Eq => BinaryOp::Eq,
+                            Token::ExactEq => BinaryOp::ExEq,
+                            Token::Greater => BinaryOp::Gt,
+                            Token::GreaterEq => BinaryOp::Ge,
+                            Token::Less => BinaryOp::Lt,
+                            Token::LessEq => BinaryOp::Le,
+                            Token::NotEq => BinaryOp::Ne,
+                            Token::NotExactEq => BinaryOp::ExNe,
+                            Token::Elvis => BinaryOp::Elvis,
+                            Token::DotDot => BinaryOp::Range,
+                            Token::Ident => BinaryOp::Infix,
+                            _ => unreachable!(),
+                        },
                     };
 
                     let rprec = binop.precedence();
 
                     // 0 a 60 + 61 b 70 * 71 c 60 + 61 dd
                     if lprec < rprec {
-                        self.bump();
                         let rhs = self.parse_unary_expr();
                         let rhs = self.parse_binary_expr(rhs, rprec + 1, peek);
 
                         lhs = ExprStmt::binary(binop, lhs, rhs);
                     } else {
+                        self.binop = Some(binop);
                         break;
                     }
+                }
+                Token::As => {
+                    self.bump();
+                    self.expect_skip_nl(Token::Ident);
+                    let target = self.last_ident();
+
+                    return ExprStmt::r#as(lhs, target);
                 }
                 Token::Semi | Token::Eof => {
                     self.bump(); // eat ';' then break
