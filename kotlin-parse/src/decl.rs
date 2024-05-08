@@ -33,8 +33,8 @@ impl<'a> Parser<'a> {
                     class: self.last_ident(),
                 }
             }
-            Err(pos) => {
-                panic!("error on pos={pos}");
+            Err(_pos) => {
+                panic!("error on pos={_pos}");
             }
         }
     }
@@ -111,6 +111,7 @@ impl<'a> Parser<'a> {
 
             Ok(())
         };
+
         loop {
             match self.advance_token_skip_nl() {
                 Token::Ident => {
@@ -123,6 +124,9 @@ impl<'a> Parser<'a> {
                     if push_arg(self, true).is_err() {
                         break;
                     }
+                }
+                Token::Comma => {
+                    continue;
                 }
                 tk => {
                     self.lookahead = Some(tk);

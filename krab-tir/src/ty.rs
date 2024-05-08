@@ -2,6 +2,7 @@ use kotlin_span::symbol::Symbol;
 use kotlin_span::*;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[non_exhaustive]
 pub enum Type {
     AbstractInt,
     AbstractFloat,

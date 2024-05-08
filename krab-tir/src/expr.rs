@@ -10,6 +10,7 @@ pub struct Expr<'tir> {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ExprKind<'tir> {
     Variable(Ident),
     Call(&'tir Expr<'tir>, &'tir [Expr<'tir>]),

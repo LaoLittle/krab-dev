@@ -1,8 +1,9 @@
-use crate::stream::Token;
-use crate::Parser;
 use kotlin_ast::decl::{DeclStmt, VarKind, VariableDecl};
 use kotlin_ast::expr::ExprStmt;
-use kotlin_ast::stmt::{AssignStmt, ForStmt, Stmt, WhileStmt};
+use kotlin_ast::stmt::{AssignOp, AssignStmt, ForStmt, Stmt, WhileStmt};
+
+use crate::stream::Token;
+use crate::Parser;
 
 impl<'a> Parser<'a> {
     pub fn parse_stmt_list(&mut self) -> Vec<Stmt> {
@@ -23,19 +24,38 @@ impl<'a> Parser<'a> {
             Token::Var => Stmt::Decl(DeclStmt::Variable(self.parse_variable_decl(true))),
             Token::While => Stmt::While(self.parse_while_stmt()),
             Token::For => Stmt::For(self.parse_for_stmt()),
-            Token::Semi | Token::Eof => Stmt::Empty,
+            Token::Semi | Token::Comma | Token::Eof => Stmt::Empty,
             tk => {
                 self.lookahead = Some(tk);
                 let expr = self.parse_expr();
-                if let ExprStmt::Ident(id) = expr {
-                    match self.peek_token() {
-                        Token::Assign => {
-                            self.bump();
-                            let expr = self.parse_expr();
-                            return Stmt::Assign(AssignStmt { id, expr });
-                        }
-                        _ => {}
+
+                match self.peek_token() {
+                    op @ (Token::Assign
+                    | Token::PlusAssign
+                    | Token::MinusAssign
+                    | Token::MulAssign
+                    | Token::DivAssign
+                    | Token::RemAssign) => {
+                        let op = 'op: {
+                            Some(match op {
+                                Token::PlusAssign => AssignOp::AddAssign,
+                                Token::MinusAssign => AssignOp::SubAssign,
+                                Token::MulAssign => AssignOp::MulAssign,
+                                Token::DivAssign => AssignOp::DivAssign,
+                                Token::RemAssign => AssignOp::RemAssign,
+                                _ => break 'op None,
+                            })
+                        };
+
+                        let ExprStmt::Ident(id) = expr else {
+                            unimplemented!("currently only supports ident as operand");
+                        };
+
+                        self.bump();
+                        let expr = self.parse_expr();
+                        return Stmt::Assign(AssignStmt { id, expr, op });
                     }
+                    _ => {}
                 }
 
                 Stmt::Expr(expr)

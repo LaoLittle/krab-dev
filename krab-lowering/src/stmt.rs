@@ -1,10 +1,9 @@
 use crate::LoweringContext;
-use kotlin_ast::decl::{DeclStmt as AstDeclStmt, VarKind, VariableDecl};
+use kotlin_ast::decl::{DeclStmt as AstDeclStmt, VarKind};
 use kotlin_ast::stmt::Stmt as AstStmt;
-use kotlin_span::{Ident, UNIT};
+use kotlin_span::{Ident, BOOLEAN, UNIT};
 use krab_tir::stmt::{Decl, Stmt};
 use krab_tir::ty::Type;
-use smallvec::SmallVec;
 
 impl<'tir> LoweringContext<'tir> {
     pub fn lowering_stmt_list(&mut self, stmts: &'tir [AstStmt]) -> &'tir [Stmt<'tir>] {
@@ -35,6 +34,23 @@ impl<'tir> LoweringContext<'tir> {
         match stmt {
             AstStmt::Decl(decl) => Stmt::Decl(self.lowering_decl_stmt(decl)),
             AstStmt::Expr(expr) => Stmt::Expr(self.lowering_expr(expr, None)),
+            AstStmt::While(r#while) => {
+                let expr = self.lowering_expr(&r#while.cond, Some(Type::Refined(BOOLEAN)));
+                let body = self.lowering_block(&r#while.body);
+
+                Stmt::While(expr, body)
+            }
+            AstStmt::Assign(assign) => {
+                let (ty, a) = self.current_scope().get(&assign.id.symbol()).unwrap();
+                let (ty, a) = (ty.clone(), *a);
+                if a {
+                    let expr = self.lowering_expr(&assign.expr, Some(ty));
+
+                    Stmt::Assign(assign.id, expr, assign.op)
+                } else {
+                    panic!("not assignable");
+                }
+            }
             _ => todo!(),
         }
     }

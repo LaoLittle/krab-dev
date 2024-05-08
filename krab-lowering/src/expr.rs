@@ -11,14 +11,12 @@ use krab_tir::ty::Type;
 
 use crate::LoweringContext;
 
-fn peel_paren_ref(expr: &ExprStmt) -> &ExprStmt {
-    let mut r = expr;
-
-    while let ExprStmt::Paren(inner) = r {
-        r = &inner;
+fn peel_paren_ref(mut expr: &ExprStmt) -> &ExprStmt {
+    while let ExprStmt::Paren(inner) = expr {
+        expr = &inner;
     }
 
-    r
+    expr
 }
 
 impl<'tir> LoweringContext<'tir> {
@@ -147,9 +145,11 @@ impl<'tir> LoweringContext<'tir> {
                 _ => todo!(),
             },
             ExprStmt::Unary(UnaryExpr { op, expr }) => {
-                let expr = self.lowering_expr(expr, None);
+                let mut expr = self.lowering_expr(expr, None);
 
-                if let Some(_) = refine {}
+                if let Some(refined) = refine {
+                    expr.ty = Type::lowering(expr.ty, refined).expect("type mismatched");
+                }
 
                 if matches!(op, UnaryOp::Negative) {}
 
@@ -264,7 +264,7 @@ mod tests {
             lowering.enter_scope();
             lowering.current_scope().insert(
                 Symbol::intern("fuck"),
-                Type::Callable(Type::Refined(UINT8).into(), vec![]),
+                (Type::Callable(Type::Refined(UINT8).into(), vec![]), false),
             );
 
             let lowered = lowering.lowering_expr(&expr, None);

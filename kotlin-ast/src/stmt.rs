@@ -30,4 +30,19 @@ pub struct ForStmt {
 pub struct AssignStmt {
     pub id: Ident,
     pub expr: ExprStmt,
+    pub op: Option<AssignOp>,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AssignOp {
+    /// "+="
+    AddAssign,
+    /// "-="
+    SubAssign,
+    /// "*="
+    MulAssign,
+    /// "/="
+    DivAssign,
+    /// "%="
+    RemAssign,
 }
