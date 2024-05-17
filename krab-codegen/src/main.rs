@@ -9,10 +9,11 @@ use std::process::Command;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::Module;
+use inkwell::llvm_sys::LLVMCallConv;
+use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{
-    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetData, TargetMachine,
 };
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
@@ -23,7 +24,7 @@ use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 use kotlin_ast::expr::{BinaryOp, UnaryOp};
 use kotlin_ast::stmt::AssignOp;
 use kotlin_parse::Parser;
-use kotlin_span::symbol::Symbol;
+use kotlin_span::symbol::{Symbol, SymbolName};
 use kotlin_span::{
     with_global_session_init, BOOLEAN, FLOAT32, FLOAT64, INT16, INT32, INT64, INT8, UINT16, UINT32,
     UINT64, UINT8, UNIT,
@@ -33,6 +34,8 @@ use krab_tir::expr::{Expr, ExprKind, Literal};
 use krab_tir::stmt::{Decl, Stmt};
 use krab_tir::ty::Type;
 
+mod types;
+
 pub struct CodegenContext<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
@@ -40,10 +43,38 @@ pub struct CodegenContext<'ctx> {
     scopes: Vec<HashMap<Symbol, (PointerValue<'ctx>, Type)>>,
     fns: Vec<HashMap<Symbol, FunctionValue<'ctx>>>,
     current_fn: Option<FunctionValue<'ctx>>,
+    runtime_fns: RuntimeFunctions<'ctx>,
+    sym_main: Symbol,
+    returned: bool,
+    ret_block: Option<BasicBlock<'ctx>>,
+    ret_value: Option<(PointerValue<'ctx>, Type)>,
+}
+
+pub struct RuntimeFunctions<'ctx> {
+    gc_safepoint: FunctionValue<'ctx>,
+    push_local: FunctionValue<'ctx>,
+    pop_local: FunctionValue<'ctx>,
 }
 
 impl<'ctx> CodegenContext<'ctx> {
     pub fn new(context: &'ctx Context, module: Module<'ctx>, builder: Builder<'ctx>) -> Self {
+        let void = context.void_type();
+        let vfty = void.fn_type(&[], false);
+        let gc_safepoint =
+            module.add_function("krab.gc.safepoint\0", vfty, Some(Linkage::External));
+        gc_safepoint.set_call_conventions(LLVMCallConv::LLVMCCallConv as u32);
+
+        let kref = context.i8_type().ptr_type(AddressSpace::default());
+        let kref_ref = kref.ptr_type(AddressSpace::default());
+
+        let push_local = module.add_function(
+            "krab.gc.pushLocal\0",
+            void.fn_type(&[kref_ref.into()], false),
+            Some(Linkage::External),
+        );
+        push_local.set_call_conventions(LLVMCallConv::LLVMCCallConv as u32);
+        let pop_local = module.add_function("krab.gc.popLocal\0", vfty, Some(Linkage::External));
+
         Self {
             context,
             module,
@@ -51,6 +82,15 @@ impl<'ctx> CodegenContext<'ctx> {
             scopes: Vec::new(),
             fns: Vec::new(),
             current_fn: None,
+            runtime_fns: RuntimeFunctions {
+                gc_safepoint,
+                push_local,
+                pop_local,
+            },
+            sym_main: Symbol::intern("main"),
+            returned: false,
+            ret_block: None,
+            ret_value: None,
         }
     }
 
@@ -84,14 +124,25 @@ impl<'ctx> CodegenContext<'ctx> {
                         .unwrap();
                 }
 
+                let mut returned = false;
+
                 self.position_at_end(body_bb);
                 // body:
                 {
                     for stmt in body.stmts {
                         self.visit_stmt(stmt);
+
+                        if Self::check_ret(stmt) {
+                            returned = true;
+                            break;
+                        }
                     }
 
-                    self.build_unconditional_branch(head_bb).unwrap();
+                    if !returned {
+                        self.insert_safepoint();
+
+                        self.build_unconditional_branch(head_bb).unwrap();
+                    }
                 }
 
                 self.position_at_end(final_bb);
@@ -101,7 +152,7 @@ impl<'ctx> CodegenContext<'ctx> {
             }
             Stmt::Assign(name, expr, op) => {
                 let expr = self.visit_expr(expr).unwrap();
-                let (ptr, ty) = self.current_scope().get(&name.symbol()).unwrap();
+                let (ptr, ty) = self.find_var(&name.symbol()).unwrap();
                 let ptr = *ptr;
                 let ty = ty.clone();
                 let signed = ty.is_sint();
@@ -180,9 +231,13 @@ impl<'ctx> CodegenContext<'ctx> {
                     .map(|ty| ty.fn_type(&args, false))
                     .unwrap_or_else(|| self.context.void_type().fn_type(&args, false));
 
-                let fn_val = self
-                    .module
-                    .add_function(&name.symbol().as_str(), fn_ty, None);
+                let mut name_str = name.symbol().as_str();
+
+                if name.symbol() == self.sym_main {
+                    name_str = SymbolName::Borrowed("Z1krab_main\0");
+                }
+
+                let fn_val = self.module.add_function(&name_str, fn_ty, None);
 
                 self.current_fn = Some(fn_val);
                 self.current_fns().insert(name.symbol(), fn_val);
@@ -190,11 +245,24 @@ impl<'ctx> CodegenContext<'ctx> {
                 let bb = self.context.append_basic_block(fn_val, "entry\0");
                 self.builder.position_at_end(bb);
 
+                let ty = self.ty_to_llvm(ret_ty);
+                let ret_val = ty.map(|t| self.build_alloca(t, "ret\0").unwrap());
+                let ret_block = self.context.append_basic_block(fn_val, "");
+                self.ret_block = Some(ret_block);
+                self.ret_value = ret_val.map(|v| (v, ret_ty.clone()));
+
+                let mut locals = 0;
+
                 let mut i = 0;
                 for (name, ty) in *args_ty {
                     let ptr = self.build_alloca(self.ty_to_llvm(ty).unwrap(), "").unwrap();
                     let val = fn_val.get_nth_param(i).unwrap();
                     self.build_store(ptr, val).unwrap();
+
+                    if ty.is_object() {
+                        locals += 1;
+                    }
+
                     i += 1;
                     self.current_scope()
                         .insert(name.symbol(), (ptr, ty.clone()));
@@ -203,23 +271,37 @@ impl<'ctx> CodegenContext<'ctx> {
                 let mut returned = false;
 
                 for stmt in body.stmts {
+                    self.visit_stmt(stmt);
+
                     if let Stmt::Expr(expr) = stmt {
                         if matches!(expr.kind, ExprKind::Return(_)) {
                             returned = true;
+                            break;
                         }
                     }
 
-                    self.visit_stmt(stmt);
+                    if let Stmt::Decl(Decl::Var(..)) = stmt {
+                        // locals += 1
+                    }
 
                     if returned {
                         break;
                     } // dead code.
                 }
 
-                if !returned && ret_ty.is_unit() {
-                    self.builder.build_return(None).unwrap();
+                if !returned {
+                    self.build_unconditional_branch(ret_block).unwrap();
                 }
 
+                self.position_at_end(ret_block);
+                self.pop_local(locals);
+                self.insert_safepoint();
+                let val = ret_val.map(|ptr| self.build_load(ty.unwrap(), ptr, "").unwrap());
+                self.builder
+                    .build_return(val.as_ref().map(|v| v as _))
+                    .unwrap();
+
+                self.ret_block = None;
                 self.current_fn = None;
 
                 self.exit_scope();
@@ -231,13 +313,13 @@ impl<'ctx> CodegenContext<'ctx> {
                     return;
                 };
 
+                let expr = self.visit_expr(init).unwrap();
+
                 let ty = self.ty_to_llvm(&init.ty).unwrap();
 
                 let alloca = self.builder.build_alloca(ty, "").unwrap();
                 self.current_scope()
                     .insert(name.symbol(), (alloca, init.ty.clone()));
-
-                let expr = self.visit_expr(init).unwrap();
 
                 self.builder.build_store(alloca, expr).unwrap();
             }
@@ -255,7 +337,7 @@ impl<'ctx> CodegenContext<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         match expr.kind {
             ExprKind::Variable(id) => {
-                let Some((ptr, ty)) = self.current_scope().get(&id.symbol()) else {
+                let Some((ptr, ty)) = self.find_var(&id.symbol()) else {
                     return Some(
                         self.find_fn(&id.symbol())
                             .unwrap()
@@ -331,6 +413,7 @@ impl<'ctx> CodegenContext<'ctx> {
                         .build_int_neg(expr.into_int_value(), "")
                         .unwrap()
                         .into(),
+                    UnaryOp::Not => self.build_not(expr.into_int_value(), "").unwrap().into(),
                     _ => unimplemented!(),
                 })
             }
@@ -348,7 +431,7 @@ impl<'ctx> CodegenContext<'ctx> {
                         // goto L3
                         // L3:
                         // *code*
-                        let t = self.build_alloca(self.context.bool_type(), "").unwrap();
+                        let t = self.build_alloca(bool_ty, "").unwrap();
                         self.build_store(t, self.const_bool(false)).unwrap();
 
                         let l1 = self.append_bb();
@@ -381,7 +464,7 @@ impl<'ctx> CodegenContext<'ctx> {
                         // goto L3
                         // L3:
                         // *code*
-                        let t = self.build_alloca(self.context.bool_type(), "").unwrap();
+                        let t = self.build_alloca(bool_ty, "").unwrap();
                         self.build_store(t, self.const_bool(false)).unwrap();
 
                         let l1 = self.append_bb();
@@ -408,118 +491,197 @@ impl<'ctx> CodegenContext<'ctx> {
                 }
 
                 let signed = lhs.ty.is_sint();
+                let float = lhs.ty.is_float();
+                let int = lhs.ty.is_int();
 
                 let lhs = self.visit_expr(lhs).unwrap();
                 let rhs = self.visit_expr(rhs).unwrap();
 
-                Some(match op {
-                    BinaryOp::Add => self
-                        .builder
-                        .build_int_add(lhs.into_int_value(), rhs.into_int_value(), "")
+                if float {
+                    return Some(match op {
+                        BinaryOp::Add => self
+                            .build_float_add(lhs.into_float_value(), rhs.into_float_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Sub => self
+                            .build_float_sub(lhs.into_float_value(), rhs.into_float_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Div => self
+                            .build_float_div(lhs.into_float_value(), rhs.into_float_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Rem => self
+                            .build_float_rem(lhs.into_float_value(), rhs.into_float_value(), "")
+                            .unwrap()
+                            .into(),
+                        _ => panic!("unsupported"),
+                    });
+                }
+
+                if int {
+                    return Some(match op {
+                        BinaryOp::Add => self
+                            .build_int_add(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Sub => self
+                            .builder
+                            .build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Mul => self
+                            .builder
+                            .build_int_mul(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Div => if signed {
+                            self.build_int_signed_div(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                        } else {
+                            self.build_int_unsigned_div(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                        }
                         .unwrap()
                         .into(),
-                    BinaryOp::Sub => self
-                        .builder
-                        .build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "")
+                        BinaryOp::Rem => if signed {
+                            self.build_int_signed_rem(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                        } else {
+                            self.build_int_unsigned_rem(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                        }
                         .unwrap()
                         .into(),
-                    BinaryOp::Mul => self
-                        .builder
-                        .build_int_mul(lhs.into_int_value(), rhs.into_int_value(), "")
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Div => if signed {
-                        self.build_int_signed_div(lhs.into_int_value(), rhs.into_int_value(), "")
-                    } else {
-                        self.build_int_unsigned_div(lhs.into_int_value(), rhs.into_int_value(), "")
-                    }
-                    .unwrap()
-                    .into(),
-                    BinaryOp::Rem => if signed {
-                        self.build_int_signed_rem(lhs.into_int_value(), rhs.into_int_value(), "")
-                    } else {
-                        self.build_int_unsigned_rem(lhs.into_int_value(), rhs.into_int_value(), "")
-                    }
-                    .unwrap()
-                    .into(),
-                    BinaryOp::Eq => self
-                        .build_int_compare(
-                            IntPredicate::EQ,
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Ne => self
-                        .build_int_compare(
-                            IntPredicate::NE,
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Lt => self
-                        .build_int_compare(
-                            if signed {
-                                IntPredicate::SLT
-                            } else {
-                                IntPredicate::ULT
-                            },
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Le => self
-                        .build_int_compare(
-                            if signed {
-                                IntPredicate::SLE
-                            } else {
-                                IntPredicate::ULE
-                            },
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Gt => self
-                        .build_int_compare(
-                            if signed {
-                                IntPredicate::SGT
-                            } else {
-                                IntPredicate::UGT
-                            },
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    BinaryOp::Ge => self
-                        .build_int_compare(
-                            if signed {
-                                IntPredicate::SGE
-                            } else {
-                                IntPredicate::UGE
-                            },
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "",
-                        )
-                        .unwrap()
-                        .into(),
-                    _ => panic!("todo: {op:?}"),
-                })
+                        BinaryOp::BAnd => self
+                            .build_and(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::BOr => self
+                            .build_or(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::BXor => self
+                            .build_xor(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Shl => self
+                            .build_left_shift(lhs.into_int_value(), rhs.into_int_value(), "")
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Shr => self
+                            .build_right_shift(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                signed,
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Eq => self
+                            .build_int_compare(
+                                IntPredicate::EQ,
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Ne => self
+                            .build_int_compare(
+                                IntPredicate::NE,
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Lt => self
+                            .build_int_compare(
+                                if signed {
+                                    IntPredicate::SLT
+                                } else {
+                                    IntPredicate::ULT
+                                },
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Le => self
+                            .build_int_compare(
+                                if signed {
+                                    IntPredicate::SLE
+                                } else {
+                                    IntPredicate::ULE
+                                },
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Gt => self
+                            .build_int_compare(
+                                if signed {
+                                    IntPredicate::SGT
+                                } else {
+                                    IntPredicate::UGT
+                                },
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        BinaryOp::Ge => self
+                            .build_int_compare(
+                                if signed {
+                                    IntPredicate::SGE
+                                } else {
+                                    IntPredicate::UGE
+                                },
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                "",
+                            )
+                            .unwrap()
+                            .into(),
+                        _ => panic!("todo: {op:?}"),
+                    });
+                }
+
+                None
             }
             ExprKind::Return(expr) => {
-                let val = expr.map(|expr| self.visit_expr(expr)).flatten();
+                if let Some(ret) = self.ret_block {
+                    if let Some((ret, ty)) = self.ret_value.clone() {
+                        let val = self
+                            .visit_expr_hint(expr.unwrap(), Some(ty.clone()))
+                            .unwrap();
+                        self.build_store(ret, val).unwrap();
+                    }
 
-                self.build_return(val.as_ref().map(|v| v as &dyn BasicValue))
-                    .unwrap();
+                    self.build_unconditional_branch(ret).unwrap();
+                } else {
+                    let val = expr.map(|expr| self.visit_expr(expr)).flatten();
+
+                    self.build_return(val.as_ref().map(|v| v as &dyn BasicValue))
+                        .unwrap();
+                }
 
                 None
             }
@@ -552,6 +714,9 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     // then:
                     self.position_at_end(then_block);
+
+                    self.enter_scope();
+
                     for stmt in then.stmts {
                         last = if let Stmt::Expr(expr) = stmt {
                             self.visit_expr_hint(expr, Some(hint.clone()))
@@ -565,6 +730,8 @@ impl<'ctx> CodegenContext<'ctx> {
                         }
                     }
 
+                    self.exit_scope();
+
                     if !returned {
                         if let Some(t) = t {
                             self.build_store(t.0, last.unwrap()).unwrap();
@@ -572,10 +739,14 @@ impl<'ctx> CodegenContext<'ctx> {
 
                         self.build_unconditional_branch(final_block).unwrap();
                     }
+
                     returned = false;
 
                     // else:
                     self.position_at_end(else_block);
+
+                    self.enter_scope();
+
                     for stmt in r#else.stmts {
                         last = if let Stmt::Expr(expr) = stmt {
                             self.visit_expr_hint(expr, Some(hint.clone()))
@@ -589,6 +760,8 @@ impl<'ctx> CodegenContext<'ctx> {
                         }
                     }
 
+                    self.exit_scope();
+
                     if !returned {
                         if let Some(t) = t {
                             self.build_store(t.0, last.unwrap()).unwrap();
@@ -599,6 +772,11 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     // final:
                     self.position_at_end(final_block);
+
+                    if self.returned {
+                        self.build_unconditional_branch(self.ret_block.unwrap())
+                            .unwrap();
+                    }
                 } else {
                     let then_block = self.append_bb();
                     let final_block = self.append_bb();
@@ -608,6 +786,9 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     // then:
                     self.position_at_end(then_block);
+
+                    self.enter_scope();
+
                     for stmt in then.stmts {
                         self.visit_stmt(stmt);
 
@@ -616,6 +797,9 @@ impl<'ctx> CodegenContext<'ctx> {
                             break;
                         }
                     }
+
+                    self.exit_scope();
+
                     if !returned {
                         self.build_unconditional_branch(final_block).unwrap();
                     }
@@ -630,6 +814,25 @@ impl<'ctx> CodegenContext<'ctx> {
         }
     }
 
+    fn insert_safepoint(&self) {
+        self.builder
+            .build_direct_call(self.runtime_fns.gc_safepoint, &[], "")
+            .unwrap();
+    }
+
+    /// var is from build_alloca
+    fn push_local(&self, var: PointerValue) {
+        self.build_direct_call(self.runtime_fns.push_local, &[var.into()], "")
+            .unwrap();
+    }
+
+    fn pop_local(&self, num: u32) {
+        for _ in 0..num {
+            self.build_direct_call(self.runtime_fns.pop_local, &[], "")
+                .unwrap();
+        }
+    }
+
     fn check_ret(stmt: &Stmt) -> bool {
         if let Stmt::Expr(expr) = stmt {
             matches!(expr.kind, ExprKind::Return(_))
@@ -639,21 +842,37 @@ impl<'ctx> CodegenContext<'ctx> {
     }
 
     fn append_bb(&self) -> BasicBlock<'ctx> {
-        self.context
-            .append_basic_block(self.current_fn.unwrap(), "")
+        if let Some(ret) = self.ret_block {
+            self.context.prepend_basic_block(ret, "")
+        } else {
+            self.context
+                .append_basic_block(self.current_fn.unwrap(), "")
+        }
     }
 
     fn const_bool(&self, bool: bool) -> IntValue<'ctx> {
         self.context.bool_type().const_int(bool as u64, false)
     }
 
-    fn find_fn(&mut self, sym: &Symbol) -> Option<FunctionValue<'ctx>> {
-        for ctx in &self.fns {
+    fn find_fn(&self, sym: &Symbol) -> Option<FunctionValue<'ctx>> {
+        for ctx in self.fns.iter().rev() {
             let Some(f) = ctx.get(sym) else {
                 continue;
             };
 
             return Some(*f);
+        }
+
+        None
+    }
+
+    fn find_var(&self, sym: &Symbol) -> Option<&(PointerValue<'ctx>, Type)> {
+        for scope in self.scopes.iter().rev() {
+            let Some(v) = scope.get(sym) else {
+                continue;
+            };
+
+            return Some(v);
         }
 
         None
@@ -709,7 +928,12 @@ impl<'ctx> CodegenContext<'ctx> {
                     return Some(self.context.f64_type().into());
                 }
 
-                panic!()
+                Some(
+                    self.context
+                        .i8_type()
+                        .ptr_type(AddressSpace::default())
+                        .into(),
+                )
             }
             Type::Callable(ret_ty, args_ty) => Some({
                 let args_ty: Vec<_> = args_ty
@@ -748,6 +972,56 @@ impl<'ctx> CodegenContext<'ctx> {
                 ty.into_float_type().const_float(f).into()
             }
         }
+    }
+
+    // build entry for the program
+    fn finalize(&self, target: &TargetData) {
+        let isize_ty = self.context.ptr_sized_int_type(target, None);
+        let ptr_ty = self.context.i8_type().ptr_type(AddressSpace::default());
+
+        let vfty = self.context.void_type().fn_type(&[], false);
+
+        // (main, isize, i8*) -> isize
+        let lsty = isize_ty.fn_type(
+            &[
+                vfty.ptr_type(AddressSpace::default()).into(),
+                isize_ty.into(),
+                ptr_ty.into(),
+            ],
+            false,
+        );
+
+        let lang_start =
+            self.module
+                .add_function("krab.lang.start\0", lsty, Some(Linkage::External));
+
+        let start_ty = isize_ty.fn_type(&[isize_ty.into(), ptr_ty.into()], false);
+
+        let start = self.module.add_function("main\0", start_ty, None);
+        let bb = self.context.append_basic_block(start, "entry\0");
+        self.builder.position_at_end(bb);
+
+        let argc = start.get_nth_param(0).unwrap();
+        let argv = start.get_nth_param(1).unwrap();
+
+        let main_fn = self.find_fn(&self.sym_main).unwrap();
+
+        let ret = self
+            .build_direct_call(
+                lang_start,
+                &[
+                    main_fn.as_global_value().as_pointer_value().into(),
+                    argc.into(),
+                    argv.into(),
+                ],
+                "",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+
+        self.builder.build_return(Some(&ret)).unwrap();
     }
 }
 
@@ -831,7 +1105,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         for stmt in tir {
             codegen.visit_stmt(stmt);
         }
-        codegen.exit_scope();
 
         Target::initialize_all(&InitializationConfig::default());
 
@@ -855,6 +1128,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let td = tm.get_target_data();
         let layout = td.get_data_layout();
 
+        codegen.finalize(&td);
+
         codegen.module.set_data_layout(&layout);
         codegen
             .module
@@ -875,8 +1150,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             &Path::new("../output/test.o"),
         )?;
 
-        Command::new("ld")
+        Command::new("clang")
             .arg("test.o")
+            .args(["-L.", "-lkrab_runtime"])
             .args(["-o", "test"])
             .current_dir("../output")
             .spawn()?

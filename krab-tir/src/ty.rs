@@ -10,6 +10,10 @@ pub enum Type {
     Callable(Box<Type>, Vec<Type>),
 }
 
+static ALL_PRIMITIVE: [Symbol; 12] = [
+    INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64, FLOAT32, FLOAT64, UNIT, BOOLEAN,
+];
+
 static ALL_INT: [Symbol; 8] = [INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64];
 static ALL_FP: [Symbol; 2] = [FLOAT32, FLOAT64];
 
@@ -45,6 +49,30 @@ impl Type {
         }
     }
 
+    pub fn is_int(&self) -> bool {
+        if let Self::Refined(sym) = self {
+            ALL_INT.contains(sym)
+        } else {
+            false
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        if let Self::Refined(sym) = self {
+            ALL_FP.contains(sym)
+        } else {
+            false
+        }
+    }
+
+    pub fn is_bool(&self) -> bool {
+        if let Self::Refined(sym) = self {
+            sym == &BOOLEAN
+        } else {
+            false
+        }
+    }
+
     pub fn is_sint(&self) -> bool {
         if let Self::Refined(sym) = self {
             ALL_SINT.contains(sym)
@@ -55,6 +83,14 @@ impl Type {
 
     pub fn is_unit(&self) -> bool {
         self == &Self::Refined(UNIT)
+    }
+
+    pub fn is_object(&self) -> bool {
+        match self {
+            Type::Refined(sym) => !ALL_PRIMITIVE.contains(sym),
+            Type::Callable(..) => true,
+            _ => false,
+        }
     }
 }
 

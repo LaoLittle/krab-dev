@@ -115,8 +115,8 @@ impl<'tir> LoweringContext<'tir> {
                     }
                 };
 
-                let scope = self.current_scope();
-                scope.insert(var.name.symbol(), (ty, var.mutable));
+                self.current_scope()
+                    .insert(var.name.symbol(), (ty, var.mutable));
 
                 Decl::Var(var.name, init)
             }

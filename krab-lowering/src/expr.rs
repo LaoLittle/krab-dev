@@ -68,8 +68,12 @@ impl<'tir> LoweringContext<'tir> {
             ExprStmt::If(IfExpr { cond, then, r#else }) => {
                 let cond = self.lowering_expr(cond, Some(Type::Refined(BOOLEAN)));
                 let cond = self.expr_alloc.alloc(cond);
+                self.enter_scope();
                 let then = self.lowering_block(then);
+                self.exit_scope();
+                self.enter_scope();
                 let r#else = r#else.as_ref().map(|b| self.lowering_block(b));
+                self.exit_scope();
 
                 let mut l = Type::Refined(UNIT);
                 let mut r = Type::Refined(UNIT);
@@ -134,7 +138,7 @@ impl<'tir> LoweringContext<'tir> {
                         .unwrap_or(Type::AbstractFloat);
 
                     if let Some(refined) = refine {
-                        ty = Type::lowering(ty, refined).unwrap();
+                        ty = Type::lowering(ty, refined).expect("type mismatched");
                     }
 
                     Expr {

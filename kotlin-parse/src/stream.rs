@@ -100,7 +100,7 @@ impl<'a> TokenStream<'a> {
                         }
                         LiteralKind::Float {
                             base,
-                            empty_exponent,
+                            empty_exponent: _,
                         } => 'float: {
                             if !matches!(base, Base::Decimal) {
                                 break 'float Unknown;
@@ -142,10 +142,10 @@ impl<'a> TokenStream<'a> {
                 },
                 LxTkKind::Gt => op_match!(Eq => GreaterEq; Greater),
                 LxTkKind::Lt => op_match!(Eq => LessEq; Less),
-                // kotlin have no bitand operator
-                LxTkKind::And => op_match!(And => LAnd; Unknown),
-                // kotlin have no bitor operator
-                LxTkKind::Or => op_match!(Or => LOr; Unknown),
+                // kotlin doesn't have bitand operator, but krab does.
+                LxTkKind::And => op_match!(And => LAnd; BAnd),
+                // kotlin doesn't have bitor operator, but krab does.
+                LxTkKind::Or => op_match!(Or => LOr; BOr),
                 LxTkKind::Plus => op_match!(
                     Plus => Inc,
                     Eq => PlusAssign;
@@ -370,6 +370,10 @@ pub enum Token {
     LAnd,
     /// ||
     LOr,
+    /// &
+    BAnd,
+    /// |
+    BOr,
     /// !
     Not,
     /// ++

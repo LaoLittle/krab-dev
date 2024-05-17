@@ -26,19 +26,19 @@ fun test(a: UInt32): Boolean {
 }
 
 fun abc(a: UInt64): Int64 {
-    val fuck = if (a >= 2) 1 else -2
+    val r = if (a >= 2) 1 else -2
 
-    return fuck
+    return r
 }
 
 fun calc(input: UInt32): UInt32 {
-    var my_little_language: UInt32 = 0
+    var m: UInt32 = 0
 
-    while (my_little_language <= 114) {
-        my_little_language += 2;
+    while (m <= 114) {
+        m += 2;
     }
 
-    return my_little_language
+    return m
 }
 
 fun unsafe() {
@@ -52,7 +52,7 @@ fun loop() {
 
 fun bbc(a: Int32) {
     val d = bbc
-    d(114)
+    // d(114)
 
     val dada = test
     dada(0)
@@ -100,6 +100,10 @@ fun rem_u_test(i: UInt32): UInt32 {
     return i % 3 + i2
 }
 
+fun rem_any(i: UInt32, d: UInt32): UInt32 {
+    return i % d
+}
+
 fun div_test(i: Int32): Int32 {
     var i2 = i + 3
     i2 /= 114
@@ -114,5 +118,21 @@ fun div_u_test(i: UInt32): UInt32 {
 
 fun div_any(i: UInt32, d: UInt32): UInt32 {
     return i / d
+}
+
+fun and_any(i: UInt32, d: UInt32): UInt32 {
+    return i & d
+}
+
+fun or_any(i: UInt32, d: UInt32): UInt32 {
+    return i | d
+}
+
+fun inv(f: Float64): Float64 {
+    return 1.0 / f
+}
+
+fun neg(i: Int32): Int32 {
+    return !i
 }
 ```

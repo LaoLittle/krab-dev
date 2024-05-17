@@ -163,6 +163,8 @@ impl<'a> Parser<'a> {
                 | Token::Rem
                 | Token::LAnd
                 | Token::LOr
+                | Token::BAnd
+                | Token::BOr
                 | Token::Eq
                 | Token::ExactEq
                 | Token::Greater
@@ -193,6 +195,8 @@ impl<'a> Parser<'a> {
                             Token::Rem => BinaryOp::Rem,
                             Token::LAnd => BinaryOp::LAnd,
                             Token::LOr => BinaryOp::LOr,
+                            Token::BAnd => BinaryOp::BAnd,
+                            Token::BOr => BinaryOp::BOr,
                             Token::Eq => BinaryOp::Eq,
                             Token::ExactEq => BinaryOp::ExEq,
                             Token::Greater => BinaryOp::Gt,

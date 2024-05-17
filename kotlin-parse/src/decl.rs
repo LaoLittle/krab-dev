@@ -87,6 +87,7 @@ impl<'a> Parser<'a> {
 
     fn parse_arg_list(&mut self) -> Vec<FunArg> {
         let mut v = vec![];
+        // (a: Int32, b: Float32)
         let mut push_arg = |parser: &mut Parser, vararg: bool| -> Result<(), ()> {
             let name = parser.last_ident();
             parser.expect_skip_nl(Token::Colon);
@@ -101,12 +102,9 @@ impl<'a> Parser<'a> {
                     });
                 }
                 tk => {
-                    parser.lookahead = Some(tk);
+                    parser._expect_token(Token::Ident, tk);
                     return Err(());
                 }
-            }
-            if let Token::Colon = parser.peek_token_skip_nl() {
-                parser.bump();
             }
 
             Ok(())
@@ -118,15 +116,14 @@ impl<'a> Parser<'a> {
                     if push_arg(self, false).is_err() {
                         break;
                     }
+                    self.expect_skip_nl(Token::Comma);
                 }
                 Token::Vararg => {
                     self.expect_skip_nl(Token::Ident);
                     if push_arg(self, true).is_err() {
                         break;
                     }
-                }
-                Token::Comma => {
-                    continue;
+                    self.expect_skip_nl(Token::Comma);
                 }
                 tk => {
                     self.lookahead = Some(tk);
