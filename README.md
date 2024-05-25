@@ -132,7 +132,7 @@ fun inv(f: Float64): Float64 {
     return 1.0 / f
 }
 
-fun neg(i: Int32): Int32 {
+fun not(i: Int32): Int32 {
     return !i
 }
 ```

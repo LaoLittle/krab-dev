@@ -45,9 +45,9 @@ pub struct CodegenContext<'ctx> {
     current_fn: Option<FunctionValue<'ctx>>,
     runtime_fns: RuntimeFunctions<'ctx>,
     sym_main: Symbol,
-    returned: bool,
     ret_block: Option<BasicBlock<'ctx>>,
     ret_value: Option<(PointerValue<'ctx>, Type)>,
+    need_safepoint: bool,
 }
 
 pub struct RuntimeFunctions<'ctx> {
@@ -88,9 +88,9 @@ impl<'ctx> CodegenContext<'ctx> {
                 pop_local,
             },
             sym_main: Symbol::intern("main"),
-            returned: false,
             ret_block: None,
             ret_value: None,
+            need_safepoint: true,
         }
     }
 
@@ -689,6 +689,7 @@ impl<'ctx> CodegenContext<'ctx> {
                 // if (cond) { then } else { else }
 
                 let mut last = None;
+                let mut all_returned = false;
                 let mut returned = false;
 
                 let cond = self.visit_expr(cond).unwrap().into_int_value();
@@ -732,6 +733,8 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     self.exit_scope();
 
+                    all_returned = returned;
+
                     if !returned {
                         if let Some(t) = t {
                             self.build_store(t.0, last.unwrap()).unwrap();
@@ -762,6 +765,8 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     self.exit_scope();
 
+                    all_returned &= returned;
+
                     if !returned {
                         if let Some(t) = t {
                             self.build_store(t.0, last.unwrap()).unwrap();
@@ -772,11 +777,6 @@ impl<'ctx> CodegenContext<'ctx> {
 
                     // final:
                     self.position_at_end(final_block);
-
-                    if self.returned {
-                        self.build_unconditional_branch(self.ret_block.unwrap())
-                            .unwrap();
-                    }
                 } else {
                     let then_block = self.append_bb();
                     let final_block = self.append_bb();
@@ -1120,7 +1120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 cpu.to_str().unwrap(),
                 features.to_str().unwrap(),
                 OptimizationLevel::Aggressive,
-                RelocMode::PIC,
+                RelocMode::Default,
                 CodeModel::Default,
             )
             .unwrap();
